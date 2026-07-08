@@ -1,0 +1,225 @@
+/* LeoCraft online layer: cloud saves + multiplayer.
+   Loaded AFTER the game script — reads game globals (player, dimId, scene,
+   THREE, collectSave, editBlock, SEED) and installs the window.mp / window.cloud
+   hooks the game calls. If no cloud world is active, does nothing (pure local mode). */
+(function () {
+  const ACTIVE_KEY = 'leocraft_active';
+  const PROFILE_KEY = 'leocraft_profile';
+  const TABLE = 'leocraft_worlds';
+
+  let active = null, profile = null;
+  try { active = JSON.parse(localStorage.getItem(ACTIVE_KEY)); } catch (e) {}
+  try { profile = JSON.parse(localStorage.getItem(PROFILE_KEY)); } catch (e) {}
+  if (!active || !active.worldId || !window.supabase || !window.LEO_SUPABASE_URL) return;
+
+  const sb = window.supabase.createClient(window.LEO_SUPABASE_URL, window.LEO_SUPABASE_KEY);
+  // per-TAB identity: lets two tabs (or players) on the same computer see each other
+  const myId = ((profile && profile.playerId) || 'anon').slice(0, 8) + '-' + Math.random().toString(36).slice(2, 10);
+  const myName = (profile && profile.playerName) || 'Player';
+
+  // ---------- overlay tweaks: cloud worlds are managed from the home screen ----------
+  const sub = document.querySelector('#overlay .sub');
+  if (sub) sub.textContent = '🌍 ' + active.name.toUpperCase() +
+    (active.multiplayer ? ' · 🌐 ONLINE — CODE: ' + active.code : ' · CODE: ' + active.code);
+  const nwBtn = document.getElementById('newWorldBtn');
+  const imBtn = document.getElementById('importBtn');
+  if (nwBtn) nwBtn.style.display = 'none';   // would clobber the cloud world
+  if (imBtn) imBtn.style.display = 'none';
+
+  // ---------- status badge ----------
+  const badge = document.createElement('div');
+  badge.style.cssText = 'position:fixed;right:10px;top:10px;z-index:15;color:#fff;' +
+    'font:12px "Courier New",monospace;text-shadow:1px 1px 0 #000;text-align:right;' +
+    'pointer-events:none;white-space:pre;';
+  document.body.appendChild(badge);
+  let cloudState = '☁ cloud save ready';
+  function updateBadge() {
+    let txt = cloudState;
+    if (channel) {
+      const others = remotes.size;
+      txt += '\n👥 ' + (others + 1) + ' player' + (others ? 's' : '') + ' · code ' + active.code;
+    }
+    badge.textContent = txt;
+  }
+
+  // ---------- cloud save ----------
+  let lastUpload = 0, uploading = false, pendingSave = false;
+  async function upload() {
+    if (uploading) { pendingSave = true; return; }
+    uploading = true;
+    cloudState = '☁ saving…'; updateBadge();
+    try {
+      const snapshot = collectSave();
+      const { error } = await sb.from(TABLE)
+        .update({ data: snapshot, seed: snapshot.seed, updated_at: new Date().toISOString() })
+        .eq('id', active.worldId);
+      cloudState = error ? '⚠ cloud save failed' : '☁ saved to cloud';
+    } catch (e) {
+      cloudState = '⚠ cloud save failed';
+    }
+    uploading = false; lastUpload = Date.now(); updateBadge();
+  }
+  // called by the game's saveNow() (autosave every 15 s, plus manual saves)
+  window.cloudSaveNow = function () {
+    if (Date.now() - lastUpload < 10000) { pendingSave = true; return; }
+    upload();
+  };
+  // best-effort final save when the tab closes
+  window.addEventListener('pagehide', () => {
+    try {
+      const body = JSON.stringify({ data: collectSave(), updated_at: new Date().toISOString() });
+      fetch(window.LEO_SUPABASE_URL + '/rest/v1/' + TABLE + '?id=eq.' + active.worldId, {
+        method: 'PATCH', keepalive: true,
+        headers: {
+          apikey: window.LEO_SUPABASE_KEY,
+          Authorization: 'Bearer ' + window.LEO_SUPABASE_KEY,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body,
+      });
+    } catch (e) {}
+  });
+
+  // ---------- multiplayer ----------
+  let channel = null, joined = false, applyingRemote = false;
+  const remotes = new Map();   // playerId -> {group, target, yaw, dim, last, name}
+
+  function colorFor(id) {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return new THREE.Color().setHSL((h % 360) / 360, 0.65, 0.55);
+  }
+  function nameSprite(name) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 34px "Courier New", monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    const w = Math.min(250, ctx.measureText(name).width + 24);
+    ctx.fillRect(128 - w / 2, 8, w, 48);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(name, 128, 34);
+    const tex = new THREE.CanvasTexture(c);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+    spr.scale.set(2.2, 0.55, 1);
+    spr.position.y = 2.35;
+    return spr;
+  }
+  function buildAvatar(name, col) {
+    const g = new THREE.Group();
+    const dark = col.clone().multiplyScalar(0.6);
+    const skin = new THREE.Color(0xd9a066);
+    const box = (w, h, d, c, x, y, z) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshBasicMaterial({ color: c }));
+      m.position.set(x, y, z);
+      g.add(m); return m;
+    };
+    box(0.26, 0.75, 0.26, dark, -0.14, 0.375, 0);   // legs
+    box(0.26, 0.75, 0.26, dark, 0.14, 0.375, 0);
+    box(0.56, 0.72, 0.32, col, 0, 1.11, 0);          // body
+    box(0.22, 0.65, 0.24, col, -0.4, 1.12, 0);       // arms
+    box(0.22, 0.65, 0.24, col, 0.4, 1.12, 0);
+    box(0.5, 0.5, 0.5, skin, 0, 1.72, 0);            // head
+    box(0.09, 0.09, 0.05, new THREE.Color(0x222222), -0.12, 1.78, -0.26); // eyes
+    box(0.09, 0.09, 0.05, new THREE.Color(0x222222), 0.12, 1.78, -0.26);
+    g.add(nameSprite(name));
+    return g;
+  }
+
+  function onPos(p) {
+    if (!p || p.id === myId) return;
+    let r = remotes.get(p.id);
+    if (!r) {
+      const group = buildAvatar(p.name || 'Player', colorFor(p.id));
+      group.position.set(p.p[0], p.p[1], p.p[2]);
+      scene.add(group);
+      r = { group, target: new THREE.Vector3(), yaw: 0, dim: p.dim, last: 0, name: p.name };
+      remotes.set(p.id, r);
+      updateBadge();
+    }
+    r.target.set(p.p[0], p.p[1], p.p[2]);
+    r.yaw = p.yaw || 0;
+    r.dim = p.dim;
+    r.last = performance.now();
+    // the player with the smallest id is the clock authority — follow their time
+    if (typeof p.t === 'number' && p.id < myId) {
+      const diff = Math.abs(dayTime - p.t);
+      if (Math.min(diff, 1 - diff) > 0.015) dayTime = p.t;
+    }
+  }
+  function dropRemote(id) {
+    const r = remotes.get(id);
+    if (r) { scene.remove(r.group); remotes.delete(id); updateBadge(); }
+  }
+  function onEdit(p) {
+    if (!p || p.from === myId) return;
+    if (p.dim !== dimId) return;               // edit happened in the other dimension
+    applyingRemote = true;
+    try { editBlock(p.x, p.y, p.z, p.id); } catch (e) {}
+    applyingRemote = false;
+  }
+
+  if (active.multiplayer && active.code) {
+    channel = sb.channel('leocraft-' + active.code, {
+      config: { broadcast: { self: false }, presence: { key: myId } },
+    });
+    channel.on('broadcast', { event: 'pos' }, msg => onPos(msg.payload));
+    channel.on('broadcast', { event: 'edit' }, msg => onEdit(msg.payload));
+    channel.on('broadcast', { event: 'time' }, msg => {
+      if (msg.payload && typeof msg.payload.t === 'number') dayTime = msg.payload.t;
+    });
+    channel.on('presence', { event: 'leave' }, msg => {
+      for (const p of (msg.leftPresences || [])) dropRemote(p.key || (p[0] && p[0].key));
+      // presence payload shape varies; also sweep by state
+      const state = channel.presenceState();
+      for (const id of [...remotes.keys()]) if (!state[id]) dropRemote(id);
+    });
+    channel.subscribe(status => {
+      joined = status === 'SUBSCRIBED';
+      if (joined) channel.track({ name: myName });
+      updateBadge();
+    });
+  }
+
+  // called by the game when someone sleeps: sync the skip-to-day for everyone
+  window.mpTime = function (t) {
+    if (!channel || !joined) return;
+    channel.send({ type: 'broadcast', event: 'time', payload: { t, from: myId } });
+  };
+
+  // called by the game at the end of editBlock()
+  window.mpEdit = function (x, y, z, id) {
+    if (applyingRemote || !channel || !joined) return;
+    channel.send({ type: 'broadcast', event: 'edit',
+      payload: { x, y, z, id, dim: dimId, from: myId } });
+  };
+
+  // called by the game every frame
+  let posTimer = 0;
+  window.mpTick = function (dt) {
+    if (pendingSave && !uploading && Date.now() - lastUpload >= 10000) {
+      pendingSave = false; upload();
+    }
+    if (!channel) return;
+    posTimer += dt;
+    if (joined && posTimer >= 0.12) {
+      posTimer = 0;
+      channel.send({ type: 'broadcast', event: 'pos',
+        payload: { id: myId, name: myName, dim: dimId, t: +dayTime.toFixed(4),
+          p: [+player.pos.x.toFixed(2), +player.pos.y.toFixed(2), +player.pos.z.toFixed(2)],
+          yaw: +player.yaw.toFixed(2) } });
+    }
+    const nowT = performance.now();
+    for (const [id, r] of remotes) {
+      if (nowT - r.last > 10000) { dropRemote(id); continue; }
+      r.group.visible = r.dim === dimId;
+      r.group.position.lerp(r.target, Math.min(1, dt * 12));
+      r.group.rotation.y += (r.yaw - r.group.rotation.y) * Math.min(1, dt * 12);
+    }
+  };
+
+  updateBadge();
+})();

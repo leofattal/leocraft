@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeoCraft — Home</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; min-height:100%; background:#0a0e16; color:#dde;
+    font-family:'Courier New', monospace; }
+  body {
+    background:
+      radial-gradient(1200px 500px at 50% -10%, rgba(126,200,80,0.10), transparent 60%),
+      radial-gradient(900px 400px at 80% 110%, rgba(232,196,106,0.06), transparent 60%),
+      #0a0e16;
+    display:flex; flex-direction:column; align-items:center;
+    padding:42px 16px 60px;
+  }
+  h1 { font-size:52px; letter-spacing:5px; color:#7ec850;
+    text-shadow:3px 3px 0 #2a4d1a, 6px 6px 0 rgba(0,0,0,0.4); }
+  .sub { color:#e8c46a; font-size:14px; letter-spacing:3px; margin-top:6px; }
+  .wrap { width:100%; max-width:640px; display:flex; flex-direction:column; gap:18px; margin-top:34px; }
+
+  .card { background:rgba(18,20,28,0.92); border:3px solid #3a3f4d; border-radius:8px; padding:16px 18px; }
+  .card h2 { font-size:13px; letter-spacing:2px; color:#e8c46a; margin-bottom:12px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+  input[type=text] {
+    background:#0d1119; border:2px solid #4a4a56; border-radius:4px; color:#fff;
+    font-family:inherit; font-size:14px; padding:9px 11px; flex:1; min-width:140px;
+    outline:none;
+  }
+  input[type=text]:focus { border-color:#7ec850; }
+
+  button {
+    font-family:inherit; font-size:13px; font-weight:bold; letter-spacing:1px;
+    padding:9px 14px; border-radius:4px; cursor:pointer;
+    background:#2f3542; color:#fff; border:2px solid #565e70;
+  }
+  button:hover { background:#3a4152; border-color:#8a93a8; }
+  button.primary { background:#3d6b23; border-color:#7ec850; }
+  button.primary:hover { background:#4a8129; }
+  button.danger { background:#4d1d1d; border-color:#a04444; }
+  button.danger:hover { background:#642424; }
+  button:disabled { opacity:0.45; cursor:default; }
+
+  .world {
+    display:flex; align-items:center; gap:10px; padding:11px 8px;
+    border-bottom:1px solid #262c38; flex-wrap:wrap;
+  }
+  .world:last-child { border-bottom:none; }
+  .world .info { flex:1; min-width:160px; }
+  .world .name { font-size:15px; font-weight:bold; color:#fff; }
+  .world .meta { font-size:11px; color:#7f8a99; margin-top:3px; }
+  .world .code { color:#e8c46a; }
+  .empty { color:#7f8a99; font-size:13px; padding:8px 2px; line-height:1.7; }
+  .hint { color:#7f8a99; font-size:11px; margin-top:10px; line-height:1.6; }
+  #status { min-height:18px; font-size:12px; color:#e8c46a; margin-top:14px; text-align:center; }
+  a.plain { color:#7f8a99; font-size:12px; text-decoration:underline; cursor:pointer; }
+  .spin { display:inline-block; animation:sp 1s linear infinite; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+  <h1>LEOCRAFT</h1>
+  <div class="sub">v16 — THE DEPTHS UPDATE · ONLINE EDITION</div>
+
+  <div class="wrap">
+    <div class="card">
+      <h2>👤 PLAYER</h2>
+      <div class="row">
+        <input type="text" id="playerName" maxlength="16" placeholder="Your name (shown in multiplayer)">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🌍 MY WORLDS</h2>
+      <div id="worldList"><div class="empty"><span class="spin">⏳</span> Loading worlds…</div></div>
+      <div class="row" style="margin-top:12px;">
+        <input type="text" id="newName" maxlength="24" placeholder="New world name…">
+        <button class="primary" id="createBtn">✚ CREATE WORLD</button>
+      </div>
+      <div class="hint">Every world is ONLINE — friends can join anytime with its code.
+        Worlds auto-save to the cloud every 15 seconds while you play.</div>
+    </div>
+
+    <div class="card">
+      <h2>🤝 JOIN A FRIEND</h2>
+      <div class="row">
+        <input type="text" id="joinCode" maxlength="6" placeholder="World code (e.g. K7PMQ2)" style="text-transform:uppercase;">
+        <button class="primary" id="joinBtn">🌐 JOIN WORLD</button>
+      </div>
+      <div class="hint">Ask your friend for the code shown on their pause screen.</div>
+    </div>
+
+    <div style="text-align:center;">
+      <a class="plain" id="offlineLink">Play offline (this device only, no cloud save)</a>
+    </div>
+  </div>
+
+  <div id="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script>
+const SAVE_KEY = 'leocraft_world';
+const ACTIVE_KEY = 'leocraft_active';
+const PROFILE_KEY = 'leocraft_profile';
+const TABLE = 'leocraft_worlds';
+
+const sb = window.supabase.createClient(window.LEO_SUPABASE_URL, window.LEO_SUPABASE_KEY);
+
+// ---------- profile ----------
+let profile = null;
+try { profile = JSON.parse(localStorage.getItem(PROFILE_KEY)); } catch (e) {}
+if (!profile || !profile.playerId) {
+  profile = { playerId: (crypto.randomUUID ? crypto.randomUUID() :
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random()*16|0; return (c === 'x' ? r : (r&3|8)).toString(16); })),
+    playerName: '' };
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+}
+const nameInput = document.getElementById('playerName');
+nameInput.value = profile.playerName || '';
+nameInput.addEventListener('change', () => {
+  profile.playerName = nameInput.value.trim().slice(0, 16);
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+});
+
+const statusEl = document.getElementById('status');
+function status(msg) { statusEl.textContent = msg || ''; }
+
+function makeCode() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let c = '';
+  for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random() * chars.length)];
+  return c;
+}
+function ago(iso) {
+  if (!iso) return 'never played';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 90) return 'just now';
+  if (s < 3600) return Math.round(s/60) + ' min ago';
+  if (s < 86400) return Math.round(s/3600) + ' h ago';
+  return Math.round(s/86400) + ' days ago';
+}
+
+// ---------- world list ----------
+const listEl = document.getElementById('worldList');
+let myWorlds = [];
+
+async function refresh() {
+  const { data, error } = await sb.from(TABLE)
+    .select('id, code, name, seed, updated_at, owner_id')
+    .eq('owner_id', profile.playerId)
+    .order('updated_at', { ascending: false });
+  if (error) {
+    listEl.innerHTML = '<div class="empty">⚠ Could not reach the cloud (' + error.message +
+      '). You can still <a class="plain" onclick="playOffline()">play offline</a>.</div>';
+    return;
+  }
+  myWorlds = data || [];
+  render();
+}
+
+function render() {
+  if (!myWorlds.length) {
+    let html = '<div class="empty">No worlds yet — create one below!</div>';
+    if (localStorage.getItem(SAVE_KEY)) {
+      html += '<div class="row"><button class="primary" id="importLocalBtn">☁ SAVE THIS DEVICE\'S WORLD TO THE CLOUD</button></div>' +
+        '<div class="hint">Found a LeoCraft world saved on this device — upload it so it\'s safe and playable anywhere.</div>';
+    }
+    listEl.innerHTML = html;
+    const b = document.getElementById('importLocalBtn');
+    if (b) b.addEventListener('click', importLocal);
+    return;
+  }
+  listEl.innerHTML = '';
+  for (const w of myWorlds) {
+    const row = document.createElement('div');
+    row.className = 'world';
+    row.innerHTML =
+      '<div class="info"><div class="name"></div>' +
+      '<div class="meta">code <span class="code">' + w.code + '</span> · ' + ago(w.updated_at) + '</div></div>' +
+      '<button class="primary" data-act="play">▶ PLAY</button>' +
+      '<button class="danger" data-act="del">🗑</button>';
+    row.querySelector('.name').textContent = w.name;
+    row.addEventListener('click', e => {
+      const act = e.target.dataset && e.target.dataset.act;
+      if (act === 'play') launch(w, true);
+      if (act === 'del') delWorld(w);
+    });
+    listEl.appendChild(row);
+  }
+}
+
+// ---------- actions ----------
+async function launch(w, multiplayer) {
+  status('⏳ Loading "' + w.name + '"…');
+  const { data, error } = await sb.from(TABLE).select('data, seed').eq('id', w.id).single();
+  if (error) { status('⚠ Could not load world: ' + error.message); return; }
+  const save = data.data || { v: 16, seed: data.seed };
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+  catch (e) { status('⚠ World too big for this browser\'s storage.'); return; }
+  localStorage.setItem(ACTIVE_KEY, JSON.stringify({
+    worldId: w.id, code: w.code, name: w.name, multiplayer: !!multiplayer,
+  }));
+  location.href = 'game.html';
+}
+
+document.getElementById('createBtn').addEventListener('click', async () => {
+  const name = document.getElementById('newName').value.trim() || 'New World';
+  const seed = Math.floor(Math.random() * 99999);
+  const code = makeCode();
+  status('⏳ Creating "' + name + '"…');
+  const { data, error } = await sb.from(TABLE).insert({
+    name, code, seed, owner_id: profile.playerId,
+    owner_name: profile.playerName || null, data: { v: 16, seed },
+  }).select().single();
+  if (error) { status('⚠ Could not create world: ' + error.message); return; }
+  launch(data, true);
+});
+
+document.getElementById('joinBtn').addEventListener('click', async () => {
+  const code = document.getElementById('joinCode').value.trim().toUpperCase();
+  if (code.length < 4) { status('Type the 6-letter world code first.'); return; }
+  status('⏳ Looking for world ' + code + '…');
+  const { data, error } = await sb.from(TABLE)
+    .select('id, code, name, seed').eq('code', code).maybeSingle();
+  if (error) { status('⚠ ' + error.message); return; }
+  if (!data) { status('⚠ No world with code ' + code + ' — double-check with your friend.'); return; }
+  launch(data, true);
+});
+
+async function delWorld(w) {
+  if (!confirm('Delete "' + w.name + '" forever? This cannot be undone.')) return;
+  const { error } = await sb.from(TABLE).delete().eq('id', w.id);
+  if (error) { status('⚠ ' + error.message); return; }
+  const active = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null');
+  if (active && active.worldId === w.id) localStorage.removeItem(ACTIVE_KEY);
+  refresh();
+}
+
+async function importLocal() {
+  let save = null;
+  try { save = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) {}
+  if (!save) { status('⚠ That local world looks corrupted.'); return; }
+  status('⏳ Uploading your world…');
+  const { error } = await sb.from(TABLE).insert({
+    name: 'My World', code: makeCode(), seed: save.seed || 0,
+    owner_id: profile.playerId, owner_name: profile.playerName || null, data: save,
+  });
+  if (error) { status('⚠ ' + error.message); return; }
+  status('✓ World uploaded!');
+  refresh();
+}
+
+function playOffline() {
+  localStorage.removeItem(ACTIVE_KEY);
+  location.href = 'game.html';
+}
+document.getElementById('offlineLink').addEventListener('click', playOffline);
+
+document.getElementById('joinCode').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('joinBtn').click();
+});
+document.getElementById('newName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('createBtn').click();
+});
+
+refresh();
+</script>
+</body>
+</html>
