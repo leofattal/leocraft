@@ -4590,8 +4590,9 @@ function updateMobs(dt) {
     const vz = Math.sin(m.yaw) * (m.walking ? m.speed : 0) + m.kb.z;
     m.kb.multiplyScalar(Math.max(1 - 6*dt, 0));
     m.vel.y -= GRAVITY * dt;
+    if (m.vel.y < 0) m.fallDist = (m.fallDist || 0) - m.vel.y * dt;
     const bodyBlock = getBlock(Math.floor(m.pos.x), Math.floor(m.pos.y + m.h*0.5), Math.floor(m.pos.z));
-    if (bodyBlock === WATER) m.vel.y = 2;
+    if (bodyBlock === WATER) { m.vel.y = 2; m.fallDist = 0; }
     if (bodyBlock === LAVA) {
       m.hp -= 6 * dt;
       m.flash = 0.15;
@@ -4607,9 +4608,21 @@ function updateMobs(dt) {
       p.y -= m.vel.y * dt;
       if (fell && getBlock(Math.floor(p.x), Math.floor(p.y - 0.15), Math.floor(p.z)) === 30) {
         m.vel.y = 8;                                  // boing! mobs bounce too
+        m.fallDist = 0;
       } else {
         if (fell) {
           m.onGround = true;
+          // mobs take fall damage too (chickens flap, cats land on their feet,
+          // the dragon and blazes fly)
+          const fallDmg = Math.floor((m.fallDist || 0) - 3.5);
+          m.fallDist = 0;
+          if (fallDmg > 0 && m.kind !== 'chick' && m.kind !== 'cat' &&
+              m.kind !== 'king' && m.kind !== 'wisp') {
+            m.hp -= fallDmg;
+            m.flash = 0.15;
+            spawnParticles(new THREE.Color(0.6, 0.5, 0.4), p.x, p.y + 0.2, p.z, 6, 0.6);
+            if (m.hp <= 0) { killMob(m, true); continue; }   // splat = loot
+          }
           const under = getBlock(Math.floor(p.x), Math.floor(p.y - 0.15), Math.floor(p.z));
           if (BLOCK_HEIGHT[under] !== undefined)      // settle onto beds/chests, don't hover
             p.y = Math.floor(p.y - 0.15) + BLOCK_HEIGHT[under] + 0.001;
