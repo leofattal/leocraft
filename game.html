@@ -302,6 +302,7 @@
     🛠 Build with STAIRS, SLABS, FENCES, LADDERS · 🛒 MINECARTS on rails (R to ride)<br>
     📐 ⌘/Ctrl+S = SCHEMATICS: copy builds & paste anywhere · 🏗 share them on the home screen<br>
     🔴 REDSTONE: mine the ore → wire · craft LEVERS & LAMPS · power opens DOORS and ignites TNT<br>
+    ⚔ PVP: punch, shoot & SNOWBALL your friends online · 🍏 GOLDEN APPLE heals to full<br>
     🐺 Tame a WOLF with a bone — it follows, fights for you, right-click to sit · G creative<br>
     ⚔ BEAT THE GAME: craft an END CRYSTAL → summon & defeat the ENDER DRAGON · G creative
   </div>
@@ -551,7 +552,7 @@ const NEEDS_PICK = { 3:0, 8:0, 12:0, 13:1, 14:2, 16:0, 23:3, 27:0, 28:1, 56:1, 5
 const BLOCK_CLASS = { 3:'pick', 8:'pick', 12:'pick', 13:'pick', 14:'pick', 16:'pick',
                       4:'axe', 6:'axe', 10:'axe', 17:'axe', 20:'axe', 21:'axe', 23:'pick', 24:'shovel', 25:'pick', 27:'pick', 28:'pick', 29:'axe', 30:'axe', 31:'shovel', 32:'pick', 33:'shovel', 37:'pick', 39:'pick', 38:'axe', 40:'axe', 41:'axe', 42:'axe', 43:'pick', 44:'axe', 45:'pick', 46:'pick', 47:'pick', 48:'pick', 49:'axe', 50:'pick', 56:'pick', 57:'pick', 58:'axe', 59:'axe', 60:'axe', 65:'pick', 66:'pick', 67:'pick',
                       1:'shovel', 2:'shovel', 7:'shovel' };
-const DROP_MAP = { 1:2, 12:100, 13:116, 14:102, 28:114, 48:149, 50:46, 53:139, 56:151, 60:59, 62:61, 64:63, 66:65, 67:61 };   // tall grass -> seeds, redstone ore -> wire   // deepslate -> cobblestone
+const DROP_MAP = { 1:2, 12:100, 13:116, 14:102, 24:155, 28:114, 48:149, 50:46, 53:139, 56:151, 60:59, 62:61, 64:63, 66:65, 67:61 };   // snow -> snowballs, tall grass -> seeds   // deepslate -> cobblestone
 const isCrop     = b => b === 34 || b === 35 || b === 36;
 const isClimb    = b => b === 42;                    // ladders
 const isRail     = b => b === 43;
@@ -616,6 +617,8 @@ const ITEMS = {
   151: { name:'Raw Gold' },
   152: { name:'Gold Ingot' },
   153: { name:'Gold Armor',   armor:0.4 },
+  155: { name:'Snowball',     snow:true },
+  156: { name:'Golden Apple', food:10, heal:10 },
 };
 
 // ---------- ENCHANTMENTS ----------
@@ -692,6 +695,8 @@ shaped(['SS','SS'],         { S:3 },   57, 4);             // stone bricks
 shaped(['PPP','WWW','PPP'], { P:6, W:140 }, 58);           // bookshelf (wheat-paper books)
 shaped(['PP','PP','PP'],    { P:6 },   59, 3);             // doors
 shaped(['T','C'],           { T:103, C:46 }, 63);          // lever (stick on cobblestone)
+shaped(['SS','SS'],         { S:155 }, 24);                // 4 snowballs -> snow block
+shaped(['GGG','GBG','GGG'], { G:152, B:141 }, 156);        // golden apple (gold + bread)
 shaped([' W ','WSW',' W '], { W:61, S:29 }, 65);           // redstone lamp (wire + shroomlight)
 // furnace smelts (1 coal each)
 const SMELTS = [
@@ -1117,6 +1122,11 @@ const ICON_PAINTERS = {
                   return meat ? ((x+y)%4 ? '#7a4318' : '#96551f') : (bone || knob) ? '#f2ede2' : null; },
   119: armorPainter('#d8dde3'), 120: armorPainter('#6fe3e0'),
   151: (x,y) => Math.hypot(x-8, y-9) < 4.5 ? ((x*y)%3 ? '#f2ce3e' : '#c89a28') : null,
+  155: (x,y) => Math.hypot(x-8, y-8) < 4.5 ? ((x+y)%4 ? '#f4f8fc' : '#dce8f0') : null,
+  156: (x,y) => {
+    if (Math.abs(x-8) <= 1 && y >= 2 && y <= 4) return '#7a5230';
+    return Math.hypot(x-8, y-9) < 5 ? ((x*y)%3 ? '#ffd83e' : '#e8a818') : null;
+  },
   152: (x,y) => (y >= 6 && y <= 10 && x >= 2 && x <= 13) ? (y === 10 ? '#b08a20' : '#f6d548') : null,
   153: armorPainter('#f2ce3e'),
   121: axePainter('#a5763f'),   122: axePainter('#9a9a9a'),
@@ -2852,8 +2862,13 @@ function updateLavaDamage(dt) {
 function eatHeld() {
   const def = heldDef();
   if (!def || !def.food) return false;
-  if (player.hunger >= player.maxHunger) { sfx.denied(); return true; }
+  if (player.hunger >= player.maxHunger && !(def.heal && player.hp < player.maxHp)) { sfx.denied(); return true; }
   player.hunger = Math.min(player.hunger + def.food, player.maxHunger);
+  if (def.heal) {
+    player.hp = Math.min(player.hp + def.heal, player.maxHp);
+    updateHearts();
+    spawnParticles(new THREE.Color(1, 0.85, 0.3), player.pos.x, player.pos.y + 1.4, player.pos.z, 10, 0.8);
+  }
   consumeHeld();
   sfx.eat();
   updateHungerBar();
@@ -3710,6 +3725,17 @@ function toggleCartRide() {
     if (c.pos.distanceTo(player.pos) < 1.5) { cart = c; sfx.pop(); return; }
 }
 const bombs = [];
+function throwSnowball() {
+  if (!creative) consumeHeld();
+  const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22),
+    new THREE.MeshBasicMaterial({ color: 0xf4f8fc }));
+  m.position.set(player.pos.x + dir.x * 0.6, player.pos.y + player.eye - 0.1, player.pos.z + dir.z * 0.6);
+  scene.add(m);
+  arrows.push({ m, vel: dir.clone().multiplyScalar(16), dir: dir.clone(), dmg: 1, life: 2.5 });
+  tone(900, 400, 0.08, 'sine', 0.08);
+  swingArm();
+}
 function throwBomb() {
   consumeHeld();
   const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
@@ -3764,6 +3790,7 @@ function updateArrows(dt) {
         gone = true; break;
       }
     }
+    if (!gone && window.mpArrowCheck && window.mpArrowCheck(p, a.dmg, a.dir)) gone = true;
     if (gone) { scene.remove(a.m); arrows.splice(i, 1); }
   }
 }
@@ -5337,9 +5364,12 @@ document.addEventListener('mousedown', e => {
     if (schemMouse(0)) return;
     swingArm();
     if (!punchMob()) {
-      const hit = raycast();
-      if (hit && getBlock(hit.x, hit.y, hit.z) === 19) igniteTNT(hit.x, hit.y, hit.z);
-      else miningHeld = true;
+      if (window.mpPunch && window.mpPunch()) { /* bonked another player */ }
+      else {
+        const hit = raycast();
+        if (hit && getBlock(hit.x, hit.y, hit.z) === 19) igniteTNT(hit.x, hit.y, hit.z);
+        else miningHeld = true;
+      }
     }
   }
   if (e.button === 2) {
@@ -5363,6 +5393,7 @@ document.addEventListener('mousedown', e => {
     else if (heldDef() && heldDef().tool === 'hoe') tillSoil(hit);
     else if (heldId() === 139) plantSeeds(hit);
     else if (target === 23 && heldId() === 114) { if (ignitePortal(hit.x, hit.y, hit.z)) consumeHeld(); }
+    else if (heldDef() && heldDef().snow) throwSnowball();
     else if (heldDef() && heldDef().bomb) throwBomb();
     else if (heldDef() && heldDef().orb) throwOrb();
     else if (heldDef() && heldDef().bow) { bowCharging = true; bowDraw = 0; }
@@ -6160,7 +6191,7 @@ requestAnimationFrame(loop);
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
-<script src="net.js"></script>
+<script src="config.js?v=3"></script>
+<script src="net.js?v=3"></script>
 </body>
 </html>

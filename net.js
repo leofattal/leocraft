@@ -173,6 +173,14 @@
       if (!p || p.from === myId || p.dim !== dimId) return;
       if (window.schemEnqueueRemote) window.schemEnqueueRemote(p.list || []);
     });
+    channel.on('broadcast', { event: 'hit' }, msg => {
+      const p = msg.payload;
+      if (!p || p.to !== myId || dead) return;
+      try {
+        damagePlayer(Math.max(1, Math.min(7, p.dmg || 1)), p.kx || 0, p.kz || 0);
+        tone(220, 120, 0.15, 'square', 0.15);
+      } catch (e) {}
+    });
     channel.on('broadcast', { event: 'time' }, msg => {
       if (msg.payload && typeof msg.payload.t === 'number') dayTime = msg.payload.t;
     });
@@ -214,6 +222,67 @@
       }, delay);
       delay += 120;
     }
+  };
+
+  // ---------- PVP: your hits reach other players ----------
+  let punchCd = 0;
+  function aimAtRemote(maxDist) {
+    const dir = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+    let best = null, bestScore = 1.3;
+    for (const [id, r] of remotes) {
+      if (!r.group.visible) continue;
+      const center = r.group.position.clone(); center.y += 0.9;
+      const to = center.clone().sub(camera.position);
+      if (to.length() > maxDist) continue;
+      const t = to.dot(dir);
+      if (t < 0.2) continue;
+      const perp = camera.position.clone().addScaledVector(dir, t).distanceTo(center);
+      if (perp < bestScore) { best = { id, r }; bestScore = perp; }
+    }
+    return best;
+  }
+  function flashAvatar(r) {
+    for (const c of r.group.children) {
+      if (c.isSprite || !c.material || !c.material.color) continue;
+      if (!c.userData.orig) c.userData.orig = c.material.color.clone();
+      c.material.color.set(0xff4444);
+    }
+    setTimeout(() => {
+      for (const c of r.group.children)
+        if (!c.isSprite && c.material && c.userData.orig) c.material.color.copy(c.userData.orig);
+    }, 170);
+  }
+  function sendHit(id, r, dmg) {
+    const kx = r.group.position.x - player.pos.x, kz = r.group.position.z - player.pos.z;
+    const kl = Math.hypot(kx, kz) || 1;
+    channel.send({ type: 'broadcast', event: 'hit',
+      payload: { to: id, from: myId, dmg, kx: kx / kl, kz: kz / kl } });
+    flashAvatar(r);
+  }
+  window.mpPunch = function () {
+    if (!channel || !joined || !remotes.size) return false;
+    const nowT = performance.now();
+    const target = aimAtRemote(4);
+    if (!target) return false;
+    if (nowT - punchCd < 400) return true;   // swing cooldown, but still swallow the click
+    punchCd = nowT;
+    const def = heldDef();
+    sendHit(target.id, target.r, (def && def.dmg) || 1);
+    sfx.hit();
+    return true;
+  };
+  window.mpArrowCheck = function (pos, dmg, dir) {
+    if (!channel || !joined || !remotes.size) return false;
+    for (const [id, r] of remotes) {
+      if (!r.group.visible) continue;
+      const dx = pos.x - r.group.position.x, dy = pos.y - (r.group.position.y + 0.9), dz = pos.z - r.group.position.z;
+      if (dx * dx + dy * dy + dz * dz < 1.1) {
+        sendHit(id, r, dmg || 1);
+        sfx.hit();
+        return true;
+      }
+    }
+    return false;
   };
 
   // called by the game every frame
