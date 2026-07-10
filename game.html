@@ -4721,17 +4721,38 @@ function interactPig() {
     if (heldId() === 147) {                            // put a saddle on
       consumeHeld();
       best.saddled = true;
-      const saddle = boxMesh(0.5, 0.16, 0.42, 0x8a5a2b);
-      saddle.position.set(0, best.h * 0.72, 0);
-      best.group.add(saddle);
+      addSaddleMesh(best);
       tone(400, 700, 0.15, 'triangle', 0.12);
       return true;
     }
     return false;
   }
+  if (heldId() === 147 && best !== mount) {            // saddle in hand on a saddled animal: take it off
+    best.saddled = false;
+    if (best.saddleMesh) { best.group.remove(best.saddleMesh); best.saddleMesh = null; }
+    best.baseColors = best.group.children.map(c => c.material && c.material.color ? c.material.color.clone() : new THREE.Color());
+    addItem(147, 1);
+    tone(300, 500, 0.12, 'triangle', 0.12);
+    return true;
+  }
   mount = best;                                        // hop on!
   sfx.pop();
   return true;
+}
+function addSaddleMesh(m) {
+  const g = new THREE.Group();
+  const leather = 0x7a4a26, dark = 0x53321a, metal = 0xc9c9ce;
+  const seat = boxMesh(0.44, 0.12, 0.4, leather); seat.position.y = 0.06; g.add(seat);
+  const back = boxMesh(0.12, 0.16, 0.4, dark); back.position.set(-0.2, 0.16, 0); g.add(back);
+  const horn = boxMesh(0.1, 0.12, 0.12, dark); horn.position.set(0.21, 0.15, 0); g.add(horn);
+  const flapL = boxMesh(0.3, 0.32, 0.04, leather); flapL.position.set(0, -0.14, 0.23); g.add(flapL);
+  const flapR = flapL.clone(); flapR.position.set(0, -0.14, -0.23); g.add(flapR);
+  const stirL = boxMesh(0.1, 0.12, 0.03, metal); stirL.position.set(0, -0.34, 0.25); g.add(stirL);
+  const stirR = stirL.clone(); stirR.position.set(0, -0.34, -0.25); g.add(stirR);
+  g.position.set(m.kind === 'horse' ? 0.05 : 0, m.kind === 'horse' ? 1.42 : m.h * 0.78, 0);
+  m.group.add(g);
+  m.saddleMesh = g;
+  m.baseColors = m.group.children.map(c => c.material && c.material.color ? c.material.color.clone() : new THREE.Color());
 }
 function rebuildWolf(m) {
   scene.remove(m.group);
@@ -4889,8 +4910,8 @@ function updateMobs(dt) {
     // (getBlock would return AIR and it would fall through the world) — but its
     // AI timers above keep ticking, so a frozen boss doesn't become a broken boss
     if (!chunks.has(ckey(Math.floor(m.pos.x) >> 4, Math.floor(m.pos.z) >> 4))) continue;
-    const vx = Math.cos(m.yaw) * (m.walking ? m.speed : 0) + m.kb.x;
-    const vz = Math.sin(m.yaw) * (m.walking ? m.speed : 0) + m.kb.z;
+    const vx = Math.cos(m.yaw) * (m.walking && m !== mount ? m.speed : 0) + m.kb.x;
+    const vz = Math.sin(m.yaw) * (m.walking && m !== mount ? m.speed : 0) + m.kb.z;
     m.kb.multiplyScalar(Math.max(1 - 6*dt, 0));
     m.vel.y -= GRAVITY * dt;
     if (m.vel.y < 0) m.fallDist = (m.fallDist || 0) - m.vel.y * dt;
@@ -4919,7 +4940,7 @@ function updateMobs(dt) {
           // the dragon and blazes fly)
           const fallDmg = Math.floor((m.fallDist || 0) - 3.5);
           m.fallDist = 0;
-          if (fallDmg > 0 && m.kind !== 'chick' && m.kind !== 'cat' &&
+          if (fallDmg > 0 && m !== mount && m.kind !== 'chick' && m.kind !== 'cat' &&
               m.kind !== 'king' && m.kind !== 'wisp') {
             m.hp -= fallDmg;
             m.flash = 0.15;
@@ -4944,7 +4965,9 @@ function updateMobs(dt) {
     if (m.flash > 0) {
       m.flash -= dt;
       const amt = m.flash > 0 ? 0.7 : 0;
-      m.group.children.forEach((c, ci) => c.material.color.copy(m.baseColors[ci]).lerp(RED, amt));
+      m.group.children.forEach((c, ci) => {
+        if (c.material && c.material.color && m.baseColors[ci]) c.material.color.copy(m.baseColors[ci]).lerp(RED, amt);
+      });
     }
     m.group.position.copy(p);
     m.group.rotation.y = -m.yaw;
