@@ -93,6 +93,14 @@
       <div class="hint">Ask your friend for the code shown on their pause screen.</div>
     </div>
 
+    <div class="card">
+      <h2>🏗 BUILDS</h2>
+      <div id="myBuilds"></div>
+      <div id="communityBuilds"><div class="empty"><span class="spin">⏳</span> Loading community builds…</div></div>
+      <div class="hint">Copy builds in-game with ⌘/Ctrl+S (pick 2 corners → SAVE). SHARE puts them here for
+        everyone · GET adds a build to your in-game paste menu.</div>
+    </div>
+
     <div style="text-align:center;">
       <a class="plain" id="offlineLink">Play offline (this device only, no cloud save)</a>
     </div>
@@ -267,6 +275,98 @@ document.getElementById('joinCode').addEventListener('keydown', e => {
 document.getElementById('newName').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('createBtn').click();
 });
+
+// ---------- builds gallery ----------
+const SCHEM_KEY = 'leocraft_schematics';
+function mySchematics() {
+  try { return JSON.parse(localStorage.getItem(SCHEM_KEY)) || []; } catch (e) { return []; }
+}
+function buildRow(text, buttons) {
+  const row = document.createElement('div');
+  row.className = 'world';
+  const info = document.createElement('div');
+  info.className = 'info';
+  info.innerHTML = '<div class="name" style="font-size:13px;"></div><div class="meta"></div>';
+  info.querySelector('.name').textContent = text[0];
+  info.querySelector('.meta').textContent = text[1];
+  row.appendChild(info);
+  for (const b of buttons) row.appendChild(b);
+  return row;
+}
+function btnEl(label, cls, fn) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  if (cls) b.className = cls;
+  b.addEventListener('click', fn);
+  return b;
+}
+function renderMyBuilds() {
+  const box = document.getElementById('myBuilds');
+  box.innerHTML = '';
+  const mine = mySchematics();
+  if (!mine.length) {
+    box.innerHTML = '<div class="empty">No builds saved on this device yet — copy one in-game with ⌘/Ctrl+S.</div>';
+    return;
+  }
+  const head = document.createElement('div');
+  head.className = 'hint'; head.style.marginTop = '0';
+  head.textContent = 'On this device:';
+  box.appendChild(head);
+  mine.forEach((sc, i) => {
+    box.appendChild(buildRow(
+      [sc.name, sc.w + '×' + sc.h + '×' + sc.d],
+      [btnEl('🌍 SHARE', 'primary', () => shareBuild(sc)),
+       btnEl('🗑', 'danger', () => { const l = mySchematics(); l.splice(i, 1); localStorage.setItem(SCHEM_KEY, JSON.stringify(l)); renderMyBuilds(); })]
+    ));
+  });
+}
+async function shareBuild(sc) {
+  status('⏳ Sharing "' + sc.name + '"…');
+  const { error } = await sb.from('leocraft_builds').insert({
+    name: sc.name, w: sc.w, h: sc.h, d: sc.d, data: sc.b,
+    owner_id: profile.playerId, owner_name: profile.playerName || null,
+  });
+  status(error ? '⚠ ' + error.message : '✓ "' + sc.name + '" shared with everyone!');
+  if (!error) renderCommunity();
+}
+async function renderCommunity() {
+  const box = document.getElementById('communityBuilds');
+  const { data, error } = await sb.from('leocraft_builds')
+    .select('id, name, owner_id, owner_name, w, h, d, data, created_at')
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) { box.innerHTML = '<div class="empty">⚠ ' + error.message + '</div>'; return; }
+  box.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'hint';
+  head.textContent = 'Community builds:';
+  box.appendChild(head);
+  if (!data.length) {
+    box.appendChild(Object.assign(document.createElement('div'),
+      { className: 'empty', textContent: 'Nothing shared yet — be the first!' }));
+    return;
+  }
+  for (const bl of data) {
+    const btns = [btnEl('⬇ GET', 'primary', () => {
+      const l = mySchematics();
+      l.push({ name: bl.name, w: bl.w, h: bl.h, d: bl.d, b: bl.data });
+      try { localStorage.setItem(SCHEM_KEY, JSON.stringify(l)); } 
+      catch (e) { status('⚠ Not enough room on this device.'); return; }
+      status('✓ "' + bl.name + '" added — press ⌘/Ctrl+S in game to paste it!');
+      renderMyBuilds();
+    })];
+    if (bl.owner_id === profile.playerId)
+      btns.push(btnEl('🗑', 'danger', async () => {
+        await sb.from('leocraft_builds').delete().eq('id', bl.id);
+        renderCommunity();
+      }));
+    box.appendChild(buildRow(
+      [bl.name, bl.w + '×' + bl.h + '×' + bl.d + ' · by ' + (bl.owner_name || 'someone') + ' · ' + ago(bl.created_at)],
+      btns));
+  }
+}
+renderMyBuilds();
+renderCommunity();
 
 refresh();
 </script>
