@@ -109,7 +109,7 @@
   <div id="status"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=3"></script>
+<script src="config.js?v=4"></script>
 <script>
 const SAVE_KEY = 'leocraft_world';
 const ACTIVE_KEY = 'leocraft_active';
@@ -323,7 +323,7 @@ function renderMyBuilds() {
 async function shareBuild(sc) {
   status('⏳ Sharing "' + sc.name + '"…');
   const { error } = await sb.from('leocraft_builds').insert({
-    name: sc.name, w: sc.w, h: sc.h, d: sc.d, data: sc.b,
+    name: sc.name, w: sc.w, h: sc.h, d: sc.d, data: sc.b, chests: sc.chests || null,
     owner_id: profile.playerId, owner_name: profile.playerName || null,
   });
   status(error ? '⚠ ' + error.message : '✓ "' + sc.name + '" shared with everyone!');
@@ -332,7 +332,7 @@ async function shareBuild(sc) {
 async function renderCommunity() {
   const box = document.getElementById('communityBuilds');
   const { data, error } = await sb.from('leocraft_builds')
-    .select('id, name, owner_id, owner_name, w, h, d, data, created_at')
+    .select('id, name, owner_id, owner_name, w, h, d, data, chests, created_at')
     .order('created_at', { ascending: false })
     .limit(30);
   if (error) { box.innerHTML = '<div class="empty">⚠ ' + error.message + '</div>'; return; }
@@ -349,7 +349,7 @@ async function renderCommunity() {
   for (const bl of data) {
     const btns = [btnEl('⬇ GET', 'primary', () => {
       const l = mySchematics();
-      l.push({ name: bl.name, w: bl.w, h: bl.h, d: bl.d, b: bl.data });
+      l.push({ name: bl.name, w: bl.w, h: bl.h, d: bl.d, b: bl.data, chests: bl.chests || undefined });
       try { localStorage.setItem(SCHEM_KEY, JSON.stringify(l)); } 
       catch (e) { status('⚠ Not enough room on this device.'); return; }
       status('✓ "' + bl.name + '" added — press ⌘/Ctrl+S in game to paste it!');

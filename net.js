@@ -172,6 +172,7 @@
       const p = msg.payload;
       if (!p || p.from === myId || p.dim !== dimId) return;
       if (window.schemEnqueueRemote) window.schemEnqueueRemote(p.list || []);
+      if (p.chests && window.schemChestsRemote) window.schemChestsRemote(p.chests);
     });
     channel.on('broadcast', { event: 'hit' }, msg => {
       const p = msg.payload;
@@ -211,14 +212,15 @@
   };
 
   // schematic pastes sync as batches (spread out to stay under rate limits)
-  window.mpEditBatch = function (list, dim) {
+  window.mpEditBatch = function (list, dim, chests) {
     if (!channel || !joined) return;
     let delay = 0;
     for (let i = 0; i < list.length; i += 300) {
       const slice = list.slice(i, i + 300);
+      const extra = i === 0 && chests ? chests : undefined;
       setTimeout(() => {
         if (joined) channel.send({ type: 'broadcast', event: 'edits',
-          payload: { list: slice, dim, from: myId } });
+          payload: { list: slice, dim, from: myId, chests: extra } });
       }, delay);
       delay += 120;
     }

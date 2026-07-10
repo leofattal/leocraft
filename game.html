@@ -4428,7 +4428,7 @@ function refreshSchem() {
       try { bin = atob(sc.b); } catch (e) { return; }
       const bytes = new Uint8Array(bin.length);
       for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
-      schemPasteData = { w: sc.w, h: sc.h, d: sc.d, bytes };
+      schemPasteData = { w: sc.w, h: sc.h, d: sc.d, bytes, chests: sc.chests };
       schemMode = 'paste';
       closeSchem();
     }));
@@ -4459,8 +4459,18 @@ function saveSchematic() {
   for (let j = 0; j < bytes.length; j += 8192)
     bin += String.fromCharCode.apply(null, bytes.subarray(j, j + 8192));
   const name = (document.getElementById('schemName').value.trim() || 'My Build').slice(0, 24);
+  const chests = {};
+  for (let y = y0; y <= y1; y++)
+    for (let z = z0; z <= z1; z++)
+      for (let x = x0; x <= x1; x++)
+        if (getBlock(x, y, z) === 21) {
+          const slots = chestData.get(x + ',' + y + ',' + z);
+          if (slots && slots.some(sl => sl))
+            chests[(x - x0) + ',' + (y - y0) + ',' + (z - z0)] =
+              slots.map((sl, si) => sl ? [si, sl.id, sl.n] : null).filter(Boolean);
+        }
   const list = loadSchematics();
-  list.push({ name, w, h, d, b: btoa(bin) });
+  list.push({ name, w, h, d, b: btoa(bin), chests: Object.keys(chests).length ? chests : undefined });
   if (storeSchematics(list)) {
     cancelSchemMode();
     document.getElementById('schemName').value = '';
@@ -4481,12 +4491,30 @@ function startPasteAt(bx, by, bz) {
         edits.push([bx + x, wy, bz + z, id]);
       }
   for (const e of edits) schemQueue.push(e);
-  if (window.mpEditBatch) window.mpEditBatch(edits, dimId);   // friends see it too
+  const absChests = {};
+  if (sc.chests) {
+    for (const [rel, items] of Object.entries(sc.chests)) {
+      const [rx, ry, rz] = rel.split(',').map(Number);
+      const key = (bx + rx) + ',' + (by + ry) + ',' + (bz + rz);
+      const slots = new Array(27).fill(null);
+      for (const it of items) if (it && it[0] >= 0 && it[0] < 27) slots[it[0]] = { id: it[1], n: it[2] };
+      chestData.set(key, slots);
+      absChests[key] = items;
+    }
+  }
+  if (window.mpEditBatch) window.mpEditBatch(edits, dimId, Object.keys(absChests).length ? absChests : null);
   cancelSchemMode();
   saveFlashTimer = 1.4;
 }
 window.schemEnqueueRemote = list => {
   for (const e of list) if (Array.isArray(e) && e.length === 4) schemQueue.push(e);
+};
+window.schemChestsRemote = chests => {
+  for (const [key, items] of Object.entries(chests || {})) {
+    const slots = new Array(27).fill(null);
+    for (const it of items) if (it && it[0] >= 0 && it[0] < 27) slots[it[0]] = { id: it[1], n: it[2] };
+    chestData.set(key, slots);
+  }
 };
 function schemMouse(button) {
   if (button !== 0 || !schemMode) return false;
@@ -6191,7 +6219,7 @@ requestAnimationFrame(loop);
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=3"></script>
-<script src="net.js?v=3"></script>
+<script src="config.js?v=4"></script>
+<script src="net.js?v=4"></script>
 </body>
 </html>
