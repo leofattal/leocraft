@@ -3213,10 +3213,10 @@ function updateFlow(dt) {
         const nb = getBlock(x + dx, y, z + dz);
         if (nb !== WATER && nb !== LAVA) continue;
         const nrec = liquidLevel.get(nk);
-        const nlev = nrec ? nrec.level : 1;
+        const nlev = nrec ? nrec.level : 8;   // world-gen oceans/lakes are infinite sources
         if (nlev - 1 > bestLevel) { bestLevel = nlev - 1; bestKind = nb; }
       }
-      const isSource = rec && rec.level === 8;
+      const isSource = (rec && rec.level === 8) || (!rec && (here === WATER || here === LAVA));
       if (isSource) { /* keep as source */ }
       else if (bestKind && bestLevel >= 1) {
         const maxSpread = bestKind === WATER ? WATER_SPREAD : LAVA_SPREAD;
@@ -4481,6 +4481,26 @@ function saveSchematic() {
 function startPasteAt(bx, by, bz) {
   const sc = schemPasteData;
   const edits = [];
+  // site prep 1: bulldoze a 2-block ring around & above so hills and trees
+  // don't bury the build or block its doors
+  for (let y = 0; y < sc.h + 2; y++)
+    for (let z = -2; z < sc.d + 2; z++)
+      for (let x = -2; x < sc.w + 2; x++) {
+        if (x >= 0 && x < sc.w && y < sc.h && z >= 0 && z < sc.d) continue;   // schematic covers this
+        const wx = bx + x, wy = by + y, wz = bz + z;
+        if (wy < 1 || wy >= WORLD_HEIGHT) continue;
+        const cur = getBlock(wx, wy, wz);
+        if (cur !== AIR && cur !== 9) edits.push([wx, wy, wz, AIR]);
+      }
+  // site prep 2: fill a dirt foundation under the footprint so nothing floats
+  for (let z = 0; z < sc.d; z++)
+    for (let x = 0; x < sc.w; x++)
+      for (let wy = by - 1; wy > by - 8 && wy > 1; wy--) {
+        const cur = getBlock(bx + x, wy, bz + z);
+        if (isSolid(cur)) break;
+        edits.push([bx + x, wy, bz + z, 2]);
+      }
+  // the build itself
   let i = 0;
   for (let y = 0; y < sc.h; y++)
     for (let z = 0; z < sc.d; z++)
