@@ -168,6 +168,11 @@
     });
     channel.on('broadcast', { event: 'pos' }, msg => onPos(msg.payload));
     channel.on('broadcast', { event: 'edit' }, msg => onEdit(msg.payload));
+    channel.on('broadcast', { event: 'edits' }, msg => {
+      const p = msg.payload;
+      if (!p || p.from === myId || p.dim !== dimId) return;
+      if (window.schemEnqueueRemote) window.schemEnqueueRemote(p.list || []);
+    });
     channel.on('broadcast', { event: 'time' }, msg => {
       if (msg.payload && typeof msg.payload.t === 'number') dayTime = msg.payload.t;
     });
@@ -192,9 +197,23 @@
 
   // called by the game at the end of editBlock()
   window.mpEdit = function (x, y, z, id) {
-    if (applyingRemote || !channel || !joined) return;
+    if (applyingRemote || window._schemQuiet || !channel || !joined) return;
     channel.send({ type: 'broadcast', event: 'edit',
       payload: { x, y, z, id, dim: dimId, from: myId } });
+  };
+
+  // schematic pastes sync as batches (spread out to stay under rate limits)
+  window.mpEditBatch = function (list, dim) {
+    if (!channel || !joined) return;
+    let delay = 0;
+    for (let i = 0; i < list.length; i += 300) {
+      const slice = list.slice(i, i + 300);
+      setTimeout(() => {
+        if (joined) channel.send({ type: 'broadcast', event: 'edits',
+          payload: { list: slice, dim, from: myId } });
+      }, delay);
+      delay += 120;
+    }
   };
 
   // called by the game every frame

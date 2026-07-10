@@ -264,6 +264,19 @@
   <div class="hint">Press E to close</div>
 </div>
 
+<div class="panel" id="schemPanel" style="flex-direction:column; width:460px;">
+  <h2>📐 SCHEMATICS — copy & paste builds</h2>
+  <div id="schemStatus" style="font-size:12px;color:#9fb;margin-bottom:10px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:10px;">
+    <button class="worldBtn" id="schemPick">⛏ PICK CORNERS</button>
+    <input type="text" id="schemName" maxlength="24" placeholder="Name your build…"
+      style="flex:1;background:#0d1119;border:2px solid #4a4a56;border-radius:4px;color:#fff;font-family:inherit;font-size:12px;padding:6px 8px;outline:none;">
+    <button class="worldBtn" id="schemSave">💾 SAVE</button>
+  </div>
+  <div id="schemList" style="max-height:300px;overflow-y:auto;"></div>
+  <div class="hint">⌘/Ctrl+S opens this · pick 2 corners, SAVE · PASTE builds where you click (max 32×32×32)</div>
+</div>
+
 <div id="overlay">
   <h1>LEOCRAFT</h1>
   <div class="sub">v16.0 — THE DEPTHS UPDATE</div>
@@ -286,7 +299,8 @@
     💎 AMETHYST GEODES · ❄ IGLOOS in the snow · the world is DEEP now (dig way down!)<br>
     🌊 WATER & LAVA FLOW · 🐷🐎 SADDLE a pig or HORSE, press R to dismount · 🐱 tame CATS with meat<br>
     🏹 BOW: hold right-click to draw, release to fire · 🪂 GLIDER: right-click mid-air to soar<br>
-    🛠 Build with STAIRS, SLABS, FENCES, LADDERS · 🛒 place a MINECART on rails, press R to ride<br>
+    🛠 Build with STAIRS, SLABS, FENCES, LADDERS · 🛒 MINECARTS on rails (R to ride)<br>
+    📐 ⌘/Ctrl+S = SCHEMATICS: copy any build with 2 corners, paste it anywhere (even in a friend's world)<br>
     🐺 Tame a WOLF with a bone — it follows, fights for you, right-click to sit · G creative<br>
     ⚔ BEAT THE GAME: craft an END CRYSTAL → summon & defeat the ENDER DRAGON · G creative
   </div>
@@ -4216,6 +4230,203 @@ function updateWolf(m, dt) {
     }
   }
 }
+// ---------- SCHEMATICS: copy & paste builds (Cmd/Ctrl+S) ----------
+let schemOpen = false;
+let schemMode = null;            // 'corner' | 'paste'
+let schemCorners = [];
+let schemPasteData = null;
+const SCHEM_KEY = 'leocraft_schematics';
+const SCHEM_MAX = 32;
+const schemQueue = [];
+let schemPreview = null;
+
+function loadSchematics() {
+  try { return JSON.parse(localStorage.getItem(SCHEM_KEY)) || []; } catch (e) { return []; }
+}
+function storeSchematics(list) {
+  try { localStorage.setItem(SCHEM_KEY, JSON.stringify(list)); return true; }
+  catch (e) { alert('Not enough room on this device to save that schematic.'); return false; }
+}
+function openSchem() {
+  schemOpen = true;
+  miningHeld = false;
+  refreshSchem();
+  document.getElementById('schemPanel').style.display = 'flex';
+  if (fallbackMode) playing = false;
+  else document.exitPointerLock();
+  syncHud();
+}
+function closeSchem() {
+  schemOpen = false;
+  document.getElementById('schemPanel').style.display = 'none';
+  syncHud();
+  if (dead) return;
+  if (fallbackMode) { playing = true; syncHud(); }
+  else canvas.requestPointerLock();
+}
+function cancelSchemMode() {
+  schemMode = null;
+  schemCorners = [];
+  schemPasteData = null;
+  if (schemPreview) { scene.remove(schemPreview); schemPreview = null; }
+}
+function schemStatusText() {
+  if (schemCorners.length === 2) {
+    const [a, b] = schemCorners;
+    return 'Selected ' + (Math.abs(a[0]-b[0])+1) + '×' + (Math.abs(a[1]-b[1])+1) + '×' +
+      (Math.abs(a[2]-b[2])+1) + ' — name it and press 💾 SAVE';
+  }
+  if (schemMode === 'corner') return 'Click corner ' + (schemCorners.length + 1) + ' of 2 in the world…';
+  return 'Copy any build: pick two corners, save it, then paste it anywhere — even in a friend\'s world.';
+}
+function refreshSchem() {
+  document.getElementById('schemStatus').textContent = schemStatusText();
+  const list = document.getElementById('schemList');
+  list.innerHTML = '';
+  const schems = loadSchematics();
+  if (!schems.length) {
+    list.innerHTML = '<div style="color:#7f8a99;font-size:12px;padding:6px 2px;">No saved builds yet.</div>';
+    return;
+  }
+  schems.forEach((sc, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #2a2f3a;';
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'flex:1;font-size:13px;';
+    lbl.textContent = sc.name + '  (' + sc.w + '×' + sc.h + '×' + sc.d + ')';
+    row.appendChild(lbl);
+    const mkBtn = (txt, green, fn) => {
+      const b = document.createElement('button');
+      b.textContent = txt;
+      b.style.cssText = 'font-family:inherit;font-size:11px;font-weight:bold;padding:5px 9px;border-radius:4px;' +
+        'cursor:pointer;color:#fff;border:2px solid ' + (green ? '#7ec850' : '#a04444') + ';' +
+        'background:' + (green ? '#3d6b23' : '#4d1d1d') + ';';
+      b.addEventListener('mousedown', e => { e.stopPropagation(); fn(); });
+      return b;
+    };
+    row.appendChild(mkBtn('📋 PASTE', true, () => {
+      let bin;
+      try { bin = atob(sc.b); } catch (e) { return; }
+      const bytes = new Uint8Array(bin.length);
+      for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+      schemPasteData = { w: sc.w, h: sc.h, d: sc.d, bytes };
+      schemMode = 'paste';
+      closeSchem();
+    }));
+    row.appendChild(mkBtn('🗑', false, () => {
+      const l = loadSchematics(); l.splice(i, 1); storeSchematics(l); refreshSchem();
+    }));
+    list.appendChild(row);
+  });
+}
+function saveSchematic() {
+  if (schemCorners.length !== 2) { document.getElementById('schemStatus').textContent = 'Pick 2 corners first (⛏ PICK CORNERS)'; return; }
+  const [a, b] = schemCorners;
+  const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
+  const y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+  const z0 = Math.min(a[2], b[2]), z1 = Math.max(a[2], b[2]);
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, d = z1 - z0 + 1;
+  if (w > SCHEM_MAX || h > SCHEM_MAX || d > SCHEM_MAX) {
+    document.getElementById('schemStatus').textContent = '⚠ Too big! Max ' + SCHEM_MAX + ' blocks each way (yours: ' + w + '×' + h + '×' + d + ')';
+    return;
+  }
+  const bytes = new Uint8Array(w * h * d);
+  let i = 0;
+  for (let y = y0; y <= y1; y++)
+    for (let z = z0; z <= z1; z++)
+      for (let x = x0; x <= x1; x++)
+        bytes[i++] = getBlock(x, y, z);
+  let bin = '';
+  for (let j = 0; j < bytes.length; j += 8192)
+    bin += String.fromCharCode.apply(null, bytes.subarray(j, j + 8192));
+  const name = (document.getElementById('schemName').value.trim() || 'My Build').slice(0, 24);
+  const list = loadSchematics();
+  list.push({ name, w, h, d, b: btoa(bin) });
+  if (storeSchematics(list)) {
+    cancelSchemMode();
+    document.getElementById('schemName').value = '';
+    refreshSchem();
+    tone(700, 1100, 0.15, 'sine', 0.12);
+  }
+}
+function startPasteAt(bx, by, bz) {
+  const sc = schemPasteData;
+  const edits = [];
+  let i = 0;
+  for (let y = 0; y < sc.h; y++)
+    for (let z = 0; z < sc.d; z++)
+      for (let x = 0; x < sc.w; x++) {
+        const id = sc.bytes[i++];
+        const wy = by + y;
+        if (wy < 1 || wy >= WORLD_HEIGHT) continue;
+        edits.push([bx + x, wy, bz + z, id]);
+      }
+  for (const e of edits) schemQueue.push(e);
+  if (window.mpEditBatch) window.mpEditBatch(edits, dimId);   // friends see it too
+  cancelSchemMode();
+  saveFlashTimer = 1.4;
+}
+window.schemEnqueueRemote = list => {
+  for (const e of list) if (Array.isArray(e) && e.length === 4) schemQueue.push(e);
+};
+function schemMouse(button) {
+  if (button !== 0 || !schemMode) return false;
+  const hit = raycast();
+  if (!hit) return true;
+  if (schemMode === 'corner') {
+    schemCorners.push([hit.x, hit.y, hit.z]);
+    spawnParticles(new THREE.Color(0.4, 1, 0.6), hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, 8, 0.6);
+    tone(700, 950, 0.08, 'sine', 0.1);
+    if (schemCorners.length === 2) { schemMode = null; openSchem(); }
+    return true;
+  }
+  if (schemMode === 'paste' && hit.face) {
+    startPasteAt(hit.x + hit.face[0], hit.y + hit.face[1], hit.z + hit.face[2]);
+    return true;
+  }
+  return true;
+}
+function processSchemQueue() {
+  // green ghost box shows where things will go
+  if (schemMode) {
+    if (!schemPreview) {
+      schemPreview = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshBasicMaterial({ color: 0x66ff99, transparent: true, opacity: 0.22, depthWrite: false }));
+      scene.add(schemPreview);
+    }
+    const hit = raycast();
+    schemPreview.visible = !!hit;
+    if (hit) {
+      if (schemMode === 'paste' && schemPasteData && hit.face) {
+        const sc = schemPasteData;
+        schemPreview.scale.set(sc.w, sc.h, sc.d);
+        schemPreview.position.set(hit.x + hit.face[0] + sc.w / 2, hit.y + hit.face[1] + sc.h / 2, hit.z + hit.face[2] + sc.d / 2);
+      } else {
+        schemPreview.scale.set(1.02, 1.02, 1.02);
+        schemPreview.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+      }
+    }
+  } else if (schemPreview) {
+    scene.remove(schemPreview);
+    schemPreview = null;
+  }
+  if (!schemQueue.length) return;
+  window._schemQuiet = true;   // net.js batches these instead of per-block spam
+  const n = Math.min(schemQueue.length, 80);
+  for (let i = 0; i < n; i++) {
+    const [x, y, z, id] = schemQueue.shift();
+    try { editBlock(x, y, z, id); } catch (e) {}
+  }
+  window._schemQuiet = false;
+}
+document.getElementById('schemPick').addEventListener('mousedown', e => {
+  e.stopPropagation();
+  cancelSchemMode();
+  schemMode = 'corner';
+  closeSchem();
+});
+document.getElementById('schemSave').addEventListener('mousedown', e => { e.stopPropagation(); saveSchematic(); });
+
 // ---------- VILLAGER TRADING ----------
 let tradeOpen = false;
 let tradeMob = null;
@@ -4941,12 +5152,21 @@ let fallbackMode = false;
 
 document.addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (e.key && e.key.length === 1 && playing && !inventoryOpen && !furnaceOpen && !chestOpen && !enchantOpen && !tradeOpen) {
+  if ((e.metaKey || e.ctrlKey) && e.code === 'KeyS') {
+    e.preventDefault();
+    if (schemOpen) closeSchem();
+    else if (!dead && !victoryOpen && !inventoryOpen && !furnaceOpen && !chestOpen &&
+             !enchantOpen && !hacksOpen && !tradeOpen) { cancelSchemMode(); openSchem(); }
+    return;
+  }
+  if (e.code === 'Escape' && schemMode) cancelSchemMode();
+  if (e.key && e.key.length === 1 && playing && !inventoryOpen && !furnaceOpen && !chestOpen && !enchantOpen && !tradeOpen && !schemOpen) {
     if (feedHaxCode(e.key)) return;
   }
   if (e.code === 'KeyE') {
     if (furnaceOpen) { closeFurnace(); return; }
     if (tradeOpen) { closeTrade(); return; }
+    if (schemOpen) { closeSchem(); return; }
     if (chestOpen) { closeChest(); return; }
     if (enchantOpen) { closeEnchant(); return; }
     if (hacksOpen) { closeHacks(); return; }
@@ -4997,8 +5217,9 @@ document.addEventListener('mousemove', e => {
   player.pitch = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, player.pitch));
 });
 document.addEventListener('mousedown', e => {
-  if (!playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen) return;
+  if (!playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen) return;
   if (e.button === 0) {
+    if (schemMouse(0)) return;
     swingArm();
     if (!punchMob()) {
       const hit = raycast();
@@ -5088,8 +5309,8 @@ function updateArm(dt, now) {
 // ---------- POINTER LOCK ----------
 const overlay = document.getElementById('overlay');
 function syncHud() {
-  overlay.style.display = (playing || dead || inventoryOpen || furnaceOpen || chestOpen || victoryOpen || enchantOpen || hacksOpen || tradeOpen) ? 'none' : 'flex';
-  const show = playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen;
+  overlay.style.display = (playing || dead || inventoryOpen || furnaceOpen || chestOpen || victoryOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen) ? 'none' : 'flex';
+  const show = playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen;
   document.getElementById('crosshair').style.display = playing ? 'block' : 'none';
   document.getElementById('hotbar').style.display = show ? 'flex' : 'none';
   document.getElementById('hearts').style.display = show ? 'block' : 'none';
@@ -5104,7 +5325,7 @@ function enterGame() {
     if (p && p.catch) p.catch(() => {});
   } catch (e) { /* checked below */ }
   setTimeout(() => {
-    if (document.pointerLockElement !== canvas && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen) {
+    if (document.pointerLockElement !== canvas && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen && !schemOpen) {
       fallbackMode = true;
       playing = true;
       syncHud();
@@ -5124,7 +5345,7 @@ document.addEventListener('pointerlockchange', () => {
   if (fallbackMode) return;
   playing = document.pointerLockElement === canvas;
   syncHud();
-  if (!playing && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen) overlay.querySelector('.click').textContent = '▶ CLICK TO RESUME ◀';
+  if (!playing && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen && !schemOpen) overlay.querySelector('.click').textContent = '▶ CLICK TO RESUME ◀';
 });
 
 // ---------- CHEST PANEL ----------
@@ -5668,6 +5889,7 @@ function loop(now) {
     updateFlow(dt);
     processLight(dt);
     processRebuilds();
+    processSchemQueue();
     streamChunks(dt);
     processMeshQueue();
     managePassiveMobs(dt);
@@ -5683,7 +5905,7 @@ function loop(now) {
       highlight.scale.set(1, hh, 1);
       setTargetLabel(BLOCKS[hb] ? BLOCKS[hb].name : '');
     } else setTargetLabel('');
-  } else if ((inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen) && !dead) {
+  } else if ((inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen) && !dead) {
     setTargetLabel('');
     updateParticles(dt);
     updateDrops(dt, now);
@@ -5751,6 +5973,7 @@ requestAnimationFrame(loop);
   const useB  = btn('✋', 'right:18px;bottom:96px;');
   const mineB = btn('⛏', 'right:92px;bottom:96px;');
   const invB  = btn('🎒', 'right:92px;bottom:176px;', 50);
+  const schB  = btn('📐', 'right:166px;bottom:176px;', 50);
 
   let joyId = null, lookId = null, lookX = 0, lookY = 0;
   const clearMove = () => {
@@ -5815,6 +6038,7 @@ requestAnimationFrame(loop);
   hold(useB,  () => document.dispatchEvent(new MouseEvent('mousedown', { button: 2 })),
               () => document.dispatchEvent(new MouseEvent('mouseup', { button: 2 })));
   hold(invB,  () => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE' })));
+  hold(schB,  () => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', ctrlKey: true })));
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
