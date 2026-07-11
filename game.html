@@ -2513,6 +2513,12 @@ function editBlock(x, y, z, id) {
   setBlockData(x, y, z, id);
   if (window.mpEdit) window.mpEdit(x, y, z, id);
   if (!_rsQuiet && (RS_BLOCKS.has(id) || RS_BLOCKS.has(old))) schedulePower(x, y, z);
+  if ((old === 59 || old === 60) && id !== 59 && id !== 60) {
+    for (const py of [y - 1, y + 1]) {
+      const pb = getBlock(x, py, z);
+      if (pb === 59 || pb === 60) { editBlock(x, py, z, AIR); break; }
+    }
+  }
   if (id === 15) { torchPositions.add(x+','+y+','+z); addTorchMesh(x, y, z); }
   markLightDirty(x, z, (old === 15 || id === 15 || old === LAVA || id === LAVA || LIGHT_EMIT[old] || LIGHT_EMIT[id]) ? 15 : 8);
   rebuildAround(x, z);
@@ -3515,6 +3521,15 @@ function placeBlock() {
   const overlapY = py+1 > p.y    && py < p.y+player.height;
   const overlapZ = pz+1 > p.z-hw && pz < p.z+hw;
   if (id !== 15 && overlapX && overlapY && overlapZ) return;
+  if (id === 59) {                                   // doors are two blocks tall
+    const above = getBlock(px, py + 1, pz);
+    if (!inWorld(px, py + 1, pz) || (above !== AIR && !isLiquid(above))) { sfx.denied(); return; }
+    if (!creative) consumeHeld();
+    editBlock(px, py, pz, 59);
+    editBlock(px, py + 1, pz, 59);
+    sfx.place();
+    return;
+  }
   if (!creative) consumeHeld();
   editBlock(px, py, pz, id);
   sfx.place();
@@ -4295,6 +4310,16 @@ function updateWolf(m, dt) {
     }
   }
 }
+// ---------- DOORS: two blocks tall, act as one ----------
+function toggleDoor(x, y, z, open) {
+  const want = open ? 60 : 59;
+  if (getBlock(x, y, z) !== want) editBlock(x, y, z, want);
+  for (const py of [y - 1, y + 1]) {
+    const pb = getBlock(x, py, z);
+    if ((pb === 59 || pb === 60) && pb !== want) { editBlock(x, py, z, want); break; }
+  }
+}
+
 // ---------- REDSTONE: levers power wires, wires power lamps/doors/TNT ----------
 const RS_BLOCKS = new Set([59, 60, 61, 62, 63, 64, 65, 66]);
 let _rsQuiet = false;
@@ -4333,8 +4358,8 @@ function recomputePower(sx, sy, sz) {
         const b = getBlock(nx, ny, nz);
         if (b === 65 && powered) editBlock(nx, ny, nz, 66);
         else if (b === 66 && !powered) editBlock(nx, ny, nz, 65);
-        else if (b === 59 && powered) editBlock(nx, ny, nz, 60);
-        else if (b === 60 && !powered) editBlock(nx, ny, nz, 59);
+        else if (b === 59 && powered) toggleDoor(nx, ny, nz, true);
+        else if (b === 60 && !powered) toggleDoor(nx, ny, nz, false);
         else if (b === 19 && powered) igniteTNT(nx, ny, nz);
       }
   } finally { _rsQuiet = false; }
@@ -5430,8 +5455,8 @@ document.addEventListener('mousedown', e => {
     else if (target === 21) openChest(hit.x, hit.y, hit.z);
     else if (target === 25) summonKing(hit.x, hit.y, hit.z);
     else if (target === 32) openEnchant();
-    else if (target === 59) { editBlock(hit.x, hit.y, hit.z, 60); sfx.place(); }
-    else if (target === 60) { editBlock(hit.x, hit.y, hit.z, 59); sfx.place(); }
+    else if (target === 59) { toggleDoor(hit.x, hit.y, hit.z, true); sfx.place(); }
+    else if (target === 60) { toggleDoor(hit.x, hit.y, hit.z, false); sfx.place(); }
     else if (target === 63) { editBlock(hit.x, hit.y, hit.z, 64); tone(600, 500, 0.08, 'square', 0.12); }
     else if (target === 64) { editBlock(hit.x, hit.y, hit.z, 63); tone(500, 400, 0.08, 'square', 0.12); }
     else if (interactVillager()) { /* trading! */ }
