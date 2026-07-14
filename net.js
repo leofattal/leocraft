@@ -174,6 +174,14 @@
       if (window.schemEnqueueRemote) window.schemEnqueueRemote(p.list || []);
       if (p.chests && window.schemChestsRemote) window.schemChestsRemote(p.chests);
     });
+    channel.on('broadcast', { event: 'chat' }, msg => {
+      const p = msg.payload;
+      if (!p || p.from === myId || typeof p.text !== 'string') return;
+      const text = p.text.slice(0, 120);
+      if (window.chatReceive) window.chatReceive(p.name || 'Player', text);
+      const r = remotes.get(p.from);
+      if (r) showBubble(r, text);
+    });
     channel.on('broadcast', { event: 'hit' }, msg => {
       const p = msg.payload;
       if (!p || p.to !== myId || dead) return;
@@ -224,6 +232,33 @@
       }, delay);
       delay += 120;
     }
+  };
+
+  // ---------- chat bubbles over heads ----------
+  function showBubble(r, text) {
+    if (r.bubble) { r.group.remove(r.bubble); r.bubble = null; }
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 96;
+    const ctx = c.getContext('2d');
+    ctx.font = '30px "Courier New", monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const short = text.length > 34 ? text.slice(0, 33) + '…' : text;
+    const w = Math.min(500, ctx.measureText(short).width + 36);
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillRect(256 - w / 2, 14, w, 62);
+    ctx.fillStyle = '#16202c';
+    ctx.fillText(short, 256, 46);
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+    spr.scale.set(3.4, 0.64, 1);
+    spr.position.y = 2.95;
+    r.group.add(spr);
+    r.bubble = spr;
+    setTimeout(() => { if (r.bubble === spr) { r.group.remove(spr); r.bubble = null; } }, 6000);
+  }
+  window.mpChat = function (text) {
+    if (!channel || !joined) return;
+    channel.send({ type: 'broadcast', event: 'chat',
+      payload: { from: myId, name: myName, text: String(text).slice(0, 120) } });
   };
 
   // ---------- PVP: your hits reach other players ----------

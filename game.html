@@ -277,6 +277,10 @@
   <div class="hint">⌘/Ctrl+S opens this · pick 2 corners, SAVE · PASTE builds where you click (max 32×32×32)</div>
 </div>
 
+<div id="chatLog" style="position:fixed;left:12px;bottom:118px;z-index:16;display:flex;flex-direction:column;gap:3px;align-items:flex-start;pointer-events:none;font:13px 'Courier New',monospace;color:#fff;text-shadow:1px 1px 0 #000;max-width:46vw;"></div>
+<input id="chatInput" maxlength="120" placeholder="Say something… (Enter to send)" autocomplete="off"
+  style="position:fixed;left:12px;bottom:84px;width:min(420px,60vw);z-index:26;display:none;background:rgba(10,12,18,0.92);border:2px solid #7ec850;border-radius:4px;color:#fff;font:13px 'Courier New',monospace;padding:7px 9px;outline:none;">
+
 <div id="overlay">
   <h1>LEOCRAFT</h1>
   <div class="sub">v16.0 — THE DEPTHS UPDATE</div>
@@ -482,6 +486,16 @@ const BLOCKS = {
   65: { name:'Redstone Lamp', top:66, side:66, bottom:66 },
   66: { name:'Redstone Lamp (lit)', top:67, side:67, bottom:67 },
   67: { name:'Redstone Ore', top:68, side:68, bottom:68 },
+  68: { name:'Red Wool',    top:69, side:69, bottom:69 },
+  69: { name:'Orange Wool', top:70, side:70, bottom:70 },
+  70: { name:'Yellow Wool', top:71, side:71, bottom:71 },
+  71: { name:'Green Wool',  top:72, side:72, bottom:72 },
+  72: { name:'Blue Wool',   top:73, side:73, bottom:73 },
+  73: { name:'Purple Wool', top:74, side:74, bottom:74 },
+  74: { name:'Pink Wool',   top:75, side:75, bottom:75 },
+  75: { name:'Black Wool',  top:76, side:76, bottom:76 },
+  76: { name:'Hopper',      top:77, side:77, bottom:77 },
+  77: { name:'Button',      top:78, side:78, bottom:78 },
 };
 const GRAVITY_BLOCKS = new Set([7, 31]);   // sand & gravel obey gravity
 const LIGHT_EMIT = { 26:11, 29:11, 48:8, 66:12 };   // portals, shroomlights, amethyst clusters, lit lamps
@@ -540,23 +554,26 @@ const MODELS = {
   62: [ { box:[0.06,0,0.06, 0.94,0.05,0.94], tiles:{ top:64, side:64, bottom:64 } } ],
   63: [ { box:[0.28,0,0.36, 0.72,0.14,0.64], tiles:{ top:65, side:65, bottom:65 } },
         { box:[0.42,0.12,0.24, 0.58,0.52,0.4], tiles:{ top:65, side:65, bottom:65 } } ],
+  76: [ { box:[0,0.4,0, 1,1,1], tiles:{ top:77, side:77, bottom:77 } },
+        { box:[0.3,0,0.3, 0.7,0.4,0.7], tiles:{ top:77, side:77, bottom:77 } } ],
+  77: [ { box:[0.32,0,0.32, 0.68,0.14,0.68], tiles:{ top:78, side:78, bottom:78 } } ],
   64: [ { box:[0.28,0,0.36, 0.72,0.14,0.64], tiles:{ top:65, side:65, bottom:65 } },
         { box:[0.42,0.12,0.6, 0.58,0.52,0.76], tiles:{ top:64, side:64, bottom:64 } } ],
 };
 // how tall each special block really is (for standing on them)
 const BLOCK_HEIGHT = { 17:0.55, 21:0.88, 29:0.82, 30:0.4, 34:0.35, 35:0.65, 36:0.95, 39:0.5, 40:0.5, 41:1, 37:1, 38:1, 48:0.6, 49:0.08, 51:0.65, 52:0.6, 53:0.55, 54:0.65 };
 const LAVA = 22;
-const HARDNESS = { 1:0.5, 2:0.5, 3:1.4, 4:0.8, 5:0.15, 6:0.8, 7:0.4, 8:1.6, 9:Infinity, 10:0.8, 12:1.8, 13:2.2, 14:2.6, 15:0.05, 16:1.4, 17:0.3, 18:0.3, 19:0.3, 20:0.8, 21:0.8, 23:9, 24:0.5, 25:2, 26:0.4, 27:1.4, 28:2, 29:0.3, 30:0.6, 31:0.55, 32:2, 33:0.5, 34:0.02, 35:0.02, 36:0.02, 37:1.4, 38:0.8, 39:1.2, 40:0.8, 41:0.8, 42:0.4, 43:0.5, 44:1.2, 45:1.6, 46:1.6, 47:1.5, 48:0.4, 49:0.4, 50:2.2, 51:0.02, 52:0.02, 53:0.02, 54:0.02, 55:0.2, 56:2.4, 57:1.5, 58:0.8, 59:0.7, 60:0.7, 61:0.05, 62:0.05, 63:0.3, 64:0.3, 65:0.6, 66:0.6, 67:2.2 };
+const HARDNESS = { 1:0.5, 2:0.5, 3:1.4, 4:0.8, 5:0.15, 6:0.8, 7:0.4, 8:1.6, 9:Infinity, 10:0.8, 12:1.8, 13:2.2, 14:2.6, 15:0.05, 16:1.4, 17:0.3, 18:0.3, 19:0.3, 20:0.8, 21:0.8, 23:9, 24:0.5, 25:2, 26:0.4, 27:1.4, 28:2, 29:0.3, 30:0.6, 31:0.55, 32:2, 33:0.5, 34:0.02, 35:0.02, 36:0.02, 37:1.4, 38:0.8, 39:1.2, 40:0.8, 41:0.8, 42:0.4, 43:0.5, 44:1.2, 45:1.6, 46:1.6, 47:1.5, 48:0.4, 49:0.4, 50:2.2, 51:0.02, 52:0.02, 53:0.02, 54:0.02, 55:0.2, 56:2.4, 57:1.5, 58:0.8, 59:0.7, 60:0.7, 61:0.05, 62:0.05, 63:0.3, 64:0.3, 65:0.6, 66:0.6, 67:2.2, 68:0.3, 69:0.3, 70:0.3, 71:0.3, 72:0.3, 73:0.3, 74:0.3, 75:0.3, 76:1.2, 77:0.3 };
 const NEEDS_PICK = { 3:0, 8:0, 12:0, 13:1, 14:2, 16:0, 23:3, 27:0, 28:1, 56:1, 57:0, 67:1 };   // obsidian: DIAMOND pick only
 // which tool class speeds up which block
 const BLOCK_CLASS = { 3:'pick', 8:'pick', 12:'pick', 13:'pick', 14:'pick', 16:'pick',
-                      4:'axe', 6:'axe', 10:'axe', 17:'axe', 20:'axe', 21:'axe', 23:'pick', 24:'shovel', 25:'pick', 27:'pick', 28:'pick', 29:'axe', 30:'axe', 31:'shovel', 32:'pick', 33:'shovel', 37:'pick', 39:'pick', 38:'axe', 40:'axe', 41:'axe', 42:'axe', 43:'pick', 44:'axe', 45:'pick', 46:'pick', 47:'pick', 48:'pick', 49:'axe', 50:'pick', 56:'pick', 57:'pick', 58:'axe', 59:'axe', 60:'axe', 65:'pick', 66:'pick', 67:'pick',
+                      4:'axe', 6:'axe', 10:'axe', 17:'axe', 20:'axe', 21:'axe', 23:'pick', 24:'shovel', 25:'pick', 27:'pick', 28:'pick', 29:'axe', 30:'axe', 31:'shovel', 32:'pick', 33:'shovel', 37:'pick', 39:'pick', 38:'axe', 40:'axe', 41:'axe', 42:'axe', 43:'pick', 44:'axe', 45:'pick', 46:'pick', 47:'pick', 48:'pick', 49:'axe', 50:'pick', 56:'pick', 57:'pick', 58:'axe', 59:'axe', 60:'axe', 65:'pick', 66:'pick', 67:'pick', 76:'pick',
                       1:'shovel', 2:'shovel', 7:'shovel' };
 const DROP_MAP = { 1:2, 12:100, 13:116, 14:102, 24:155, 28:114, 48:149, 50:46, 53:139, 56:151, 60:59, 62:61, 64:63, 66:65, 67:61 };   // snow -> snowballs, tall grass -> seeds   // deepslate -> cobblestone
 const isCrop     = b => b === 34 || b === 35 || b === 36;
 const isClimb    = b => b === 42;                    // ladders
 const isRail     = b => b === 43;
-const NONSOLID   = new Set([42, 43, 44, 48, 49, 51, 52, 53, 54, 60, 61, 62, 63, 64]);   // ladder, rail, cobweb, cluster, plate
+const NONSOLID   = new Set([42, 43, 44, 48, 49, 51, 52, 53, 54, 60, 61, 62, 63, 64, 77]);   // ladder, rail, cobweb, cluster, plate
 const isLiquid   = b => b === WATER || b === 22;
 const isSolid    = b => b !== AIR && b !== 15 && b !== 26 && !isCrop(b) && !isLiquid(b) && !NONSOLID.has(b);
 const targetable = b => b !== AIR && !isLiquid(b);
@@ -697,6 +714,18 @@ shaped(['PP','PP','PP'],    { P:6 },   59, 3);             // doors
 shaped(['T','C'],           { T:103, C:46 }, 63);          // lever (stick on cobblestone)
 shaped(['SS','SS'],         { S:155 }, 24);                // 4 snowballs -> snow block
 shaped(['GGG','GBG','GGG'], { G:152, B:141 }, 156);        // golden apple (gold + bread)
+// dyeing: flower (or coal) + white wool -> colored wool; mix colors 1+1 -> 2
+shapeless([51, 18], 68);          // poppy -> red
+shapeless([52, 18], 70);          // dandelion -> yellow
+shapeless([54, 18], 72);          // cornflower -> blue
+shapeless([53, 18], 71);          // tall grass -> green
+shapeless([100, 18], 75);         // coal -> black
+shapeless([68, 70], 69, 2);       // red + yellow -> orange
+shapeless([68, 72], 73, 2);       // red + blue -> purple
+shapeless([68, 18], 74, 2);       // red + white -> pink
+shaped(['M M','MCM',' M '], { M:101, C:21 }, 76);          // hopper (iron + chest)
+shaped(['PP'],              { P:6 },   49, 1);             // pressure plate
+shapeless([3], 77);                                        // stone -> button
 shaped([' W ','WSW',' W '], { W:61, S:29 }, 65);           // redstone lamp (wire + shroomlight)
 // furnace smelts (1 coal each)
 const SMELTS = [
@@ -709,7 +738,7 @@ const SMELTS = [
 ];
 
 // ---------- TEXTURE ATLAS ----------
-const TILE = 16, ATLAS_COLS = 4, ATLAS_ROWS = 18;
+const TILE = 16, ATLAS_COLS = 4, ATLAS_ROWS = 20;
 const atlasCanvas = document.createElement('canvas');
 atlasCanvas.width = TILE * ATLAS_COLS;
 atlasCanvas.height = TILE * ATLAS_ROWS;
@@ -969,6 +998,30 @@ paintTile(67, (x,y) => {                                                        
   return frame ? shade(90, 60, 30, 0.9) : shade(255, 205, 100, 0.85 + trand()*0.15);
 });
 paintTile(68, (x,y) => nearSpot(x,y) ? shade(235, 46, 36, 0.85 + trand()*0.2) : stonePx(x,y));    // redstone ore
+paintTile(78, (x,y) => {                                                                          // button
+  const btn = x >= 5 && x <= 10 && y >= 6 && y <= 10;
+  return btn ? shade(140, 140, 148, 0.8 + trand()*0.15) : null;
+});
+paintTile(77, (x,y) => {                                                                          // hopper
+  const rim = x < 2 || x > 13 || y < 2 || y > 13;
+  const hole = Math.abs(x-8) < 3 && Math.abs(y-8) < 3;
+  return rim ? shade(70, 70, 78, 0.85) : hole ? shade(20, 20, 24, 0.95) : shade(105, 105, 115, 0.75 + trand()*0.15);
+});
+
+// colored wool: same weave as white wool, tinted
+const WOOL_COLORS = [
+  [200, 55, 48],    // red
+  [232, 140, 40],   // orange
+  [235, 205, 55],   // yellow
+  [95, 175, 70],    // green
+  [70, 105, 210],   // blue
+  [150, 80, 195],   // purple
+  [238, 140, 180],  // pink
+  [45, 45, 52],     // black
+];
+WOOL_COLORS.forEach(([wr, wg, wb], wi) => {
+  paintTile(69 + wi, (x, y) => shade(wr, wg, wb, 0.8 + ((x*3 + y*5) % 7) * 0.03 + trand()*0.12));
+});
 
 // crack textures
 const CRACK_STAGES = 5;
@@ -1945,7 +1998,7 @@ const R = 48;
 const scratchSky   = new Uint8Array(R * R * WORLD_HEIGHT);
 const scratchTorch = new Uint8Array(R * R * WORLD_HEIGHT);
 const sidx = (rx, y, rz) => (y * R + rz) * R + rx;
-const passesLight = b => b === AIR || b === WATER || b === 15 || b === 26 || isCrop(b) || (b >= 51 && b <= 55) || (b >= 60 && b <= 64);
+const passesLight = b => b === AIR || b === WATER || b === 15 || b === 26 || isCrop(b) || (b >= 51 && b <= 55) || (b >= 60 && b <= 64) || b === 77;
 let torchPositions = new Set();
 
 function lightChunk(cx, cz) {
@@ -4310,6 +4363,86 @@ function updateWolf(m, dt) {
     }
   }
 }
+// ---------- CHAT (press T) ----------
+let chatOpen = false;
+function chatAdd(name, text, mine) {
+  const box = document.getElementById('chatLog');
+  const div = document.createElement('div');
+  div.textContent = (name ? name + ': ' : '') + text;
+  div.style.cssText = 'background:rgba(0,0,0,0.4);padding:2px 8px;border-radius:4px;overflow-wrap:anywhere;' +
+    (mine ? 'color:#cfe9b8;' : '');
+  box.appendChild(div);
+  while (box.children.length > 7) box.removeChild(box.firstChild);
+  setTimeout(() => { div.style.transition = 'opacity 1.2s'; div.style.opacity = '0'; }, 9000);
+  setTimeout(() => div.remove(), 10500);
+}
+window.chatReceive = (name, text) => chatAdd(name, text, false);
+function openChat() {
+  chatOpen = true;
+  for (const k in keys) keys[k] = false;
+  const inp = document.getElementById('chatInput');
+  inp.style.display = 'block';
+  if (!fallbackMode) document.exitPointerLock();
+  syncHud();
+  setTimeout(() => inp.focus(), 30);
+}
+function closeChat(send) {
+  const inp = document.getElementById('chatInput');
+  const text = inp.value.trim();
+  inp.value = '';
+  inp.style.display = 'none';
+  inp.blur();
+  chatOpen = false;
+  if (send && text) {
+    chatAdd('me', text, true);
+    if (window.mpChat) window.mpChat(text);
+  }
+  syncHud();
+  if (dead) return;
+  if (fallbackMode) { playing = true; syncHud(); }
+  else canvas.requestPointerLock();
+}
+document.getElementById('chatInput').addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') closeChat(true);
+  if (e.key === 'Escape') closeChat(false);
+});
+
+// ---------- HOPPERS: drops landing on one go into the chest below ----------
+function addToChestSlots(slots, id) {
+  for (let i = 0; i < 27; i++) {
+    const sl = slots[i];
+    if (sl && sl.id === id && stackable(id) && sl.n < MAX_STACK) { sl.n++; return true; }
+  }
+  for (let i = 0; i < 27; i++)
+    if (!slots[i]) { slots[i] = { id, n: 1 }; return true; }
+  return false;
+}
+let hopperTimer = 0;
+function updateHoppers(dt) {
+  hopperTimer -= dt;
+  if (hopperTimer > 0 || !drops.length) return;
+  hopperTimer = 0.35;
+  let changed = false;
+  for (let i = drops.length - 1; i >= 0; i--) {
+    const d = drops[i];
+    const cx2 = Math.floor(d.m.position.x), cy2 = Math.floor(d.m.position.y), cz2 = Math.floor(d.m.position.z);
+    let hy = null;
+    if (getBlock(cx2, cy2, cz2) === 76) hy = cy2;
+    else if (getBlock(cx2, cy2 - 1, cz2) === 76) hy = cy2 - 1;
+    if (hy === null) continue;
+    if (getBlock(cx2, hy - 1, cz2) !== 21) continue;      // needs a chest under it
+    if (!addToChestSlots(chestSlotsFor(cx2, hy - 1, cz2), d.id)) continue;   // chest full
+    scene.remove(d.m);
+    drops.splice(i, 1);
+    changed = true;
+  }
+  if (changed) {
+    tone(500, 700, 0.05, 'sine', 0.05);
+    refreshAllUI();
+  }
+}
+
 // ---------- DOORS: two blocks tall, act as one ----------
 function toggleDoor(x, y, z, open) {
   const want = open ? 60 : 59;
@@ -4321,14 +4454,14 @@ function toggleDoor(x, y, z, open) {
 }
 
 // ---------- REDSTONE: levers power wires, wires power lamps/doors/TNT ----------
-const RS_BLOCKS = new Set([59, 60, 61, 62, 63, 64, 65, 66]);
+const RS_BLOCKS = new Set([49, 59, 60, 61, 62, 63, 64, 65, 66, 77]);
 let _rsQuiet = false;
 const rsPending = new Set();
 function schedulePower(x, y, z) { rsPending.add(x + ',' + y + ',' + z); }
 const RS_DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
 function recomputePower(sx, sy, sz) {
   // flood the connected network of wires + levers
-  const seen = new Set(), wires = [], levers = [], queue = [];
+  const seen = new Set(), wires = [], levers = [], triggers = [], queue = [];
   const visit = (x, y, z) => {
     const k = x + ',' + y + ',' + z;
     if (seen.has(k)) return;
@@ -4336,6 +4469,7 @@ function recomputePower(sx, sy, sz) {
     const b = getBlock(x, y, z);
     if (b === 61 || b === 62) { wires.push([x, y, z]); queue.push([x, y, z]); }
     else if (b === 63 || b === 64) { levers.push([x, y, z, b]); queue.push([x, y, z]); }
+    else if (b === 49 || b === 77) { triggers.push([x, y, z]); queue.push([x, y, z]); }
   };
   visit(sx, sy, sz);
   for (const [dx, dy, dz] of RS_DIRS) visit(sx + dx, sy + dy, sz + dz);
@@ -4344,14 +4478,15 @@ function recomputePower(sx, sy, sz) {
     const [x, y, z] = queue.shift();
     for (const [dx, dy, dz] of RS_DIRS) visit(x + dx, y + dy, z + dz);
   }
-  const powered = levers.some(l => l[3] === 64);
+  const powered = levers.some(l => l[3] === 64) ||
+    triggers.some(([x, y, z]) => pressedPlates.has(x + ',' + y + ',' + z) || buttonTimers.has(x + ',' + y + ',' + z));
   _rsQuiet = true;
   try {
     for (const [x, y, z] of wires) {
       const want = powered ? 62 : 61;
       if (getBlock(x, y, z) !== want) editBlock(x, y, z, want);
     }
-    const cells = wires.concat(levers.map(l => [l[0], l[1], l[2]]));
+    const cells = wires.concat(levers.map(l => [l[0], l[1], l[2]])).concat(triggers);
     for (const [x, y, z] of cells)
       for (const [dx, dy, dz] of RS_DIRS) {
         const nx = x + dx, ny = y + dy, nz = z + dz;
@@ -4363,6 +4498,41 @@ function recomputePower(sx, sy, sz) {
         else if (b === 19 && powered) igniteTNT(nx, ny, nz);
       }
   } finally { _rsQuiet = false; }
+}
+const pressedPlates = new Set();
+const buttonTimers = new Map();
+let plateTimer = 0;
+function updatePlates(dt) {
+  for (const [k, t] of buttonTimers) {
+    if (t - dt <= 0) {
+      buttonTimers.delete(k);
+      const [x, y, z] = k.split(',').map(Number);
+      schedulePower(x, y, z);
+    } else buttonTimers.set(k, t - dt);
+  }
+  plateTimer -= dt;
+  if (plateTimer > 0) return;
+  plateTimer = 0.2;
+  const now = new Set();
+  const check = (px, py, pz) => {
+    const x = Math.floor(px), y = Math.floor(py + 0.05), z = Math.floor(pz);
+    if (getBlock(x, y, z) === 49) now.add(x + ',' + y + ',' + z);
+  };
+  check(player.pos.x, player.pos.y, player.pos.z);
+  for (const m of mobs) if (m.dying <= 0) check(m.pos.x, m.pos.y, m.pos.z);
+  for (const k of now)
+    if (!pressedPlates.has(k)) {
+      pressedPlates.add(k);
+      const [x, y, z] = k.split(',').map(Number);
+      schedulePower(x, y, z);
+      tone(820, 700, 0.04, 'square', 0.07);
+    }
+  for (const k of [...pressedPlates])
+    if (!now.has(k)) {
+      pressedPlates.delete(k);
+      const [x, y, z] = k.split(',').map(Number);
+      schedulePower(x, y, z);
+    }
 }
 function processRedstone() {
   if (!rsPending.size) return;
@@ -5366,6 +5536,13 @@ let playing = false;
 let fallbackMode = false;
 
 document.addEventListener('keydown', e => {
+  if (chatOpen) return;
+  if (e.code === 'KeyT' && (playing || fallbackMode) && !inventoryOpen && !furnaceOpen && !chestOpen &&
+      !enchantOpen && !hacksOpen && !tradeOpen && !schemOpen && !dead) {
+    e.preventDefault();
+    openChat();
+    return;
+  }
   keys[e.code] = true;
   if ((e.metaKey || e.ctrlKey) && e.code === 'KeyS') {
     e.preventDefault();
@@ -5432,7 +5609,7 @@ document.addEventListener('mousemove', e => {
   player.pitch = Math.max(-Math.PI/2 + 0.01, Math.min(Math.PI/2 - 0.01, player.pitch));
 });
 document.addEventListener('mousedown', e => {
-  if (!playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen) return;
+  if (!playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen || chatOpen) return;
   if (e.button === 0) {
     if (schemMouse(0)) return;
     swingArm();
@@ -5459,6 +5636,7 @@ document.addEventListener('mousedown', e => {
     else if (target === 60) { toggleDoor(hit.x, hit.y, hit.z, false); sfx.place(); }
     else if (target === 63) { editBlock(hit.x, hit.y, hit.z, 64); tone(600, 500, 0.08, 'square', 0.12); }
     else if (target === 64) { editBlock(hit.x, hit.y, hit.z, 63); tone(500, 400, 0.08, 'square', 0.12); }
+    else if (target === 77) { buttonTimers.set(hit.x + ',' + hit.y + ',' + hit.z, 1.5); schedulePower(hit.x, hit.y, hit.z); tone(700, 550, 0.06, 'square', 0.1); }
     else if (interactVillager()) { /* trading! */ }
     else if (interactPig()) { /* saddle or mount */ }
     else if (interactWolf()) { /* tame or sit */ }
@@ -5530,7 +5708,7 @@ function updateArm(dt, now) {
 // ---------- POINTER LOCK ----------
 const overlay = document.getElementById('overlay');
 function syncHud() {
-  overlay.style.display = (playing || dead || inventoryOpen || furnaceOpen || chestOpen || victoryOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen) ? 'none' : 'flex';
+  overlay.style.display = (playing || dead || inventoryOpen || furnaceOpen || chestOpen || victoryOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen || chatOpen) ? 'none' : 'flex';
   const show = playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen;
   document.getElementById('crosshair').style.display = playing ? 'block' : 'none';
   document.getElementById('hotbar').style.display = show ? 'flex' : 'none';
@@ -5546,7 +5724,7 @@ function enterGame() {
     if (p && p.catch) p.catch(() => {});
   } catch (e) { /* checked below */ }
   setTimeout(() => {
-    if (document.pointerLockElement !== canvas && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen && !schemOpen) {
+    if (document.pointerLockElement !== canvas && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen && !schemOpen && !chatOpen) {
       fallbackMode = true;
       playing = true;
       syncHud();
@@ -5566,7 +5744,7 @@ document.addEventListener('pointerlockchange', () => {
   if (fallbackMode) return;
   playing = document.pointerLockElement === canvas;
   syncHud();
-  if (!playing && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen && !schemOpen) overlay.querySelector('.click').textContent = '▶ CLICK TO RESUME ◀';
+  if (!playing && !dead && !inventoryOpen && !furnaceOpen && !chestOpen && !victoryOpen && !enchantOpen && !hacksOpen && !tradeOpen && !schemOpen && !chatOpen) overlay.querySelector('.click').textContent = '▶ CLICK TO RESUME ◀';
 });
 
 // ---------- CHEST PANEL ----------
@@ -6094,6 +6272,7 @@ function loop(now) {
     updateDayNight(dt);
     updateClouds(dt);
     updateFireflies(dt);
+    updateHoppers(dt);
     updateTNT(dt);
     updatePortal(dt);
     updateBombs(dt);
@@ -6111,6 +6290,7 @@ function loop(now) {
     processLight(dt);
     processRebuilds();
     processSchemQueue();
+    updatePlates(dt);
     processRedstone();
     streamChunks(dt);
     processMeshQueue();
@@ -6127,7 +6307,7 @@ function loop(now) {
       highlight.scale.set(1, hh, 1);
       setTargetLabel(BLOCKS[hb] ? BLOCKS[hb].name : '');
     } else setTargetLabel('');
-  } else if ((inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen) && !dead) {
+  } else if ((inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen || chatOpen) && !dead) {
     setTargetLabel('');
     updateParticles(dt);
     updateDrops(dt, now);
@@ -6196,6 +6376,7 @@ requestAnimationFrame(loop);
   const mineB = btn('⛏', 'right:92px;bottom:96px;');
   const invB  = btn('🎒', 'right:92px;bottom:176px;', 50);
   const schB  = btn('📐', 'right:166px;bottom:176px;', 50);
+  const chatB = btn('💬', 'right:166px;bottom:96px;', 50);
 
   let joyId = null, lookId = null, lookX = 0, lookY = 0;
   const clearMove = () => {
@@ -6261,10 +6442,11 @@ requestAnimationFrame(loop);
               () => document.dispatchEvent(new MouseEvent('mouseup', { button: 2 })));
   hold(invB,  () => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE' })));
   hold(schB,  () => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', ctrlKey: true })));
+  hold(chatB, () => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyT' })));
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=4"></script>
-<script src="net.js?v=4"></script>
+<script src="config.js?v=5"></script>
+<script src="net.js?v=5"></script>
 </body>
 </html>
