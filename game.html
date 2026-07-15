@@ -59,6 +59,11 @@
     position:fixed; left:50%; bottom:14px; transform:translateX(-50%);
     display:none; gap:5px; z-index:10;
   }
+  #offbar {
+    position:fixed; left:50%; bottom:14px; transform:translateX(-283px);
+    display:none; z-index:10;
+  }
+  #offbar .slot { border-color:#6a5a3a; }
   .slot {
     width:46px; height:46px; border:2px solid #4a4a4a; background:rgba(10,10,14,0.72);
     border-radius:4px; position:relative; cursor:pointer;
@@ -96,6 +101,9 @@
   #invGrid { display:grid; grid-template-columns:repeat(9, 46px); gap:5px; }
   #invHotbar { display:grid; grid-template-columns:repeat(9, 46px); gap:5px;
     padding-top:8px; border-top:2px solid #3a3a44; }
+  #invOffRow { display:flex; align-items:center; gap:10px; padding-top:8px; }
+  #invOffRow .label { font-size:11px; color:#8b96a5; }
+  #invOffRow .slot { border-color:#6a5a3a; }
 
   #recipeBook { width:290px; max-height:430px; overflow-y:auto; display:flex;
     flex-direction:column; gap:6px; }
@@ -199,6 +207,7 @@
 <div id="hearts"></div>
 <div id="hunger"></div>
 <div id="hotbar"></div>
+<div id="offbar"></div>
 <div id="cursorStack"></div>
 <div id="targetLabel"></div>
 <div id="xrayToggle"></div>
@@ -219,6 +228,7 @@
       <h2>INVENTORY</h2>
       <div id="invGrid"></div>
       <div id="invHotbar"></div>
+      <div id="invOffRow"><div id="invOff"></div><span class="label">OFF-HAND · press F in-game to swap with your held item</span></div>
     </div>
     <div id="creativeWrap">
       <h2>CREATIVE — click to grab a stack</h2>
@@ -289,6 +299,7 @@
     LEFT hold = mine (particles fly!) · RIGHT = place / eat / use<br>
     E = inventory + 2×2 crafting · right-click a CRAFTING TABLE for 3×3<br>
     Click slots to drag stacks · right-click to split · 1–9 hotbar · scroll to switch<br>
+    🛡 SHIELD: hold RIGHT-CLICK to block frontal hits · F = swap item to OFF-HAND · TOTEM of UNDYING cheats death<br>
     Craft picks, swords, axes, shovels · BUCKETS scoop water & LAVA (right-click)<br>
     INFINITE world · biomes · snow peaks · buckets · chests · obsidian chemistry<br>
     🌀 NETHER PORTAL: build an obsidian doorway, right-click it with a BLAZE ROD<br>
@@ -636,7 +647,10 @@ const ITEMS = {
   153: { name:'Gold Armor',   armor:0.4 },
   155: { name:'Snowball',     snow:true },
   156: { name:'Golden Apple', food:10, heal:10 },
+  157: { name:'Shield',           shield:true },
+  158: { name:'Totem of Undying', totem:true },
 };
+const SHIELD_DUR = 64;   // damage points a shield absorbs before it shatters
 
 // ---------- ENCHANTMENTS ----------
 const ENCH_DEFS = {
@@ -652,7 +666,7 @@ function enchSuffix(st) {
   const parts = Object.entries(st.ench).map(([k, v]) => ENCH_DEFS[k].name + ' ' + ROMAN[v]);
   return parts.length ? ' ✦ ' + parts.join(', ') : '';
 }
-const stackable = id => !(id >= 100 && ITEMS[id] && (ITEMS[id].tool || ITEMS[id].dmg || ITEMS[id].armor || ITEMS[id].bucket));
+const stackable = id => !(id >= 100 && ITEMS[id] && (ITEMS[id].tool || ITEMS[id].dmg || ITEMS[id].armor || ITEMS[id].bucket || ITEMS[id].shield || ITEMS[id].totem));
 const nameOf = id => id >= 100 ? ITEMS[id].name : BLOCKS[id].name;
 // items 142+ that place blocks aren't blocks; building blocks are ids < 100 already.
 
@@ -714,6 +728,8 @@ shaped(['PP','PP','PP'],    { P:6 },   59, 3);             // doors
 shaped(['T','C'],           { T:103, C:46 }, 63);          // lever (stick on cobblestone)
 shaped(['SS','SS'],         { S:155 }, 24);                // 4 snowballs -> snow block
 shaped(['GGG','GBG','GGG'], { G:152, B:141 }, 156);        // golden apple (gold + bread)
+shaped(['PIP','PPP',' P '], { P:6, I:101 }, 157);          // SHIELD (6 planks + iron)
+shaped(['GEG',' G ',' G '], { G:152, E:150 }, 158);        // TOTEM OF UNDYING (gold arms, emerald heart)
 // dyeing: flower (or coal) + white wool -> colored wool; mix colors 1+1 -> 2
 shapeless([51, 18], 68);          // poppy -> red
 shapeless([52, 18], 70);          // dandelion -> yellow
@@ -1276,6 +1292,19 @@ const ICON_PAINTERS = {
   15:  (x,y) => {
     if (Math.abs(x-8) <= 1 && y >= 5 && y <= 14) return '#7a5230';
     if (Math.abs(x-8) <= 1.5 && y >= 2 && y <= 4) return (x+y)%2 ? '#ffd75e' : '#ff9a3c';
+    return null;
+  },
+  157: (x,y) => {   // kite shield: iron rim, wood face
+    const half = y <= 8 ? 6 : 6 - (y - 8);
+    if (y < 1 || y > 14 || Math.abs(x - 8) > half) return null;
+    if (Math.abs(x - 8) > half - 1.5 || y <= 2) return '#8a929c';
+    return (x + y) % 4 ? '#8a5a2b' : '#a5763f';
+  },
+  158: (x,y) => {   // totem: gold idol with emerald eyes and outstretched arms
+    if ((y === 4 || y === 5) && (x === 6 || x === 9)) return '#2aa84a';
+    if (y >= 2 && y <= 6 && x >= 4 && x <= 11) return (x+y)%3 ? '#f2ce3e' : '#c89a28';
+    if (y === 7 && x >= 1 && x <= 14) return '#c89a28';
+    if (y >= 8 && y <= 13 && x >= 6 && x <= 9) return (x+y)%3 ? '#f2ce3e' : '#c89a28';
     return null;
   },
 };
@@ -2474,7 +2503,7 @@ function collectSave() {
     spawn: [spawnPoint.x, spawnPoint.y, spawnPoint.z],
     dim: dimId,
     player: { pos: [player.pos.x, player.pos.y, player.pos.z], hp: player.hp, hunger: player.hunger },
-    hot: hotSlots, inv: invSlots,
+    hot: hotSlots, inv: invSlots, off: offSlots,
     dims: {},
   };
   for (const [dname, D] of Object.entries(DIMS)) {
@@ -2591,6 +2620,7 @@ function editBlock(x, y, z, id) {
 // a stack is { id, n }. hotSlots = 9 hotbar, invSlots = 27 backpack, craftSlots = 3x3 grid.
 const hotSlots   = new Array(9).fill(null);
 const invSlots   = new Array(27).fill(null);
+const offSlots   = new Array(1).fill(null);   // the OFF-HAND (shield / totem / anything)
 const craftSlots = new Array(9).fill(null);
 let craftSize = 2;             // 2 = pocket crafting, 3 = crafting table
 let cursorStack = null;        // the stack "on your mouse"
@@ -2600,6 +2630,30 @@ let currentRecipe = null;
 const heldStack = () => hotSlots[selectedSlot];
 const heldId    = () => { const s = heldStack(); return s ? s.id : null; };
 const heldDef   = () => { const id = heldId(); return id >= 100 ? ITEMS[id] : null; };
+const offStack  = () => offSlots[0];
+const offDef    = () => { const s = offStack(); return s && s.id >= 100 ? ITEMS[s.id] : null; };
+function swapOffhand() {   // F key, like Minecraft
+  const tmp = offSlots[0];
+  offSlots[0] = hotSlots[selectedSlot];
+  hotSlots[selectedSlot] = tmp;
+  sfx.click();
+  refreshAllUI();
+}
+// the raised shield, if any: main hand wins, then off-hand. Returns {st, arr, i} so it can break.
+function shieldRef() {
+  const h = heldStack();
+  if (h && ITEMS[h.id] && ITEMS[h.id].shield) return { st: h, arr: hotSlots, i: selectedSlot };
+  const o = offSlots[0];
+  if (o && ITEMS[o.id] && ITEMS[o.id].shield) return { st: o, arr: offSlots, i: 0 };
+  return null;
+}
+function totemRef() {   // totems work from either hand, like Minecraft
+  const h = heldStack();
+  if (h && ITEMS[h.id] && ITEMS[h.id].totem) return { st: h, arr: hotSlots, i: selectedSlot };
+  const o = offSlots[0];
+  if (o && ITEMS[o.id] && ITEMS[o.id].totem) return { st: o, arr: offSlots, i: 0 };
+  return null;
+}
 
 function addItem(id, n) {
   for (const arr of [hotSlots, invSlots])
@@ -2794,6 +2848,8 @@ let inventoryOpen = false;
 let furnaceOpen = false;
 let spawnPoint = new THREE.Vector3();
 let damageFlash = 0;
+let blocking = false, blockAnim = 0;      // shield raised (hold right-click)
+let totemRegen = 0, totemTick = 0;        // post-totem regeneration window
 let bobPhase = 0, bobAmt = 0;
 let chestOpen = false, currentChestKey = null, currentChestSlots = null;
 let lavaTick = 0;
@@ -2851,6 +2907,24 @@ function bestArmor() {
 }
 function damagePlayer(n, kx, kz, piercing) {
   if (creative || dead || hacks.god) return;
+  // a raised shield stops directional hits coming from the front (melee, arrows, bolts, blasts)
+  if (blocking && !piercing && kx !== undefined) {
+    const sh = shieldRef();
+    const frontal = Math.sin(player.yaw) * kx + Math.cos(player.yaw) * kz > 0;
+    if (sh && frontal) {
+      if (sh.st.dur === undefined) sh.st.dur = SHIELD_DUR;
+      sh.st.dur -= Math.max(1, n);
+      tone(280, 90, 0.12, 'square', 0.16);   // wooden CLUNK
+      if (sh.st.dur <= 0) {                  // shield shatters
+        sh.arr[sh.i] = null;
+        blocking = false;
+        sfx.break();
+        spawnParticles(new THREE.Color(0.55, 0.36, 0.17), player.pos.x, player.pos.y + 1.2, player.pos.z, 14, 0.9);
+      }
+      refreshAllUI();
+      return;   // no damage, no knockback
+    }
+  }
   const armorSt = piercing ? null : bestArmorStack();
   if (armorSt) {
     const red = Math.min(ITEMS[armorSt.id].armor + 0.07 * ((armorSt.ench && armorSt.ench.prot) || 0), 0.85);
@@ -2864,7 +2938,9 @@ function damagePlayer(n, kx, kz, piercing) {
   if (player.hp <= 0) die();
 }
 function die() {
+  if (tryTotem()) return;   // a totem in either hand cheats death
   dead = true;
+  blocking = false;
   stats.deaths++;
   miningHeld = false;
   if (fallbackMode) { playing = false; }
@@ -2885,10 +2961,34 @@ function respawn() {
   else canvas.requestPointerLock();
 }
 
+// the moment of not-dying: consume the totem, snap back to 1 heart, golden burst + regen
+function tryTotem() {
+  const t = totemRef();
+  if (!t) return false;
+  t.st.n--;
+  if (t.st.n <= 0) t.arr[t.i] = null;
+  player.hp = 1;
+  totemRegen = 8; totemTick = 0;
+  player.kb.set(0, 0, 0);
+  player.fallDist = 0;
+  spawnParticles(new THREE.Color(1, 0.85, 0.2), player.pos.x, player.pos.y + 1.2, player.pos.z, 40, 1.6);
+  spawnParticles(new THREE.Color(0.3, 0.9, 0.4), player.pos.x, player.pos.y + 1.5, player.pos.z, 16, 1.2);
+  tone(600, 1600, 0.35, 'sine', 0.18);
+  setTimeout(() => tone(900, 2000, 0.4, 'sine', 0.14), 160);
+  updateHearts();
+  refreshAllUI();
+  return true;
+}
+
 // ---------- HUNGER ----------
 let hungerDrain = 0, starveTimer = 0, regenTimer = 0;
 function updateHunger(dt, sprinting) {
   if (creative || dead) return;
+  if (totemRegen > 0) {   // totem afterglow: fast free healing for a few seconds
+    totemRegen -= dt;
+    totemTick += dt;
+    if (totemTick >= 1 && player.hp < player.maxHp) { totemTick = 0; player.hp++; updateHearts(); }
+  }
   hungerDrain += dt * (1/60) + (sprinting ? dt * (1/18) : 0);
   if (hungerDrain >= 1) {
     hungerDrain -= 1;
@@ -2949,9 +3049,9 @@ function movePlayer(dt) {
   const inWeb = bodyB === 44;
 
   const canSprint = player.hunger > 2;
-  const sprinting = keys['ShiftLeft'] && !flying && !inLiquid && keys['KeyW'] && canSprint;
+  const sprinting = keys['ShiftLeft'] && !flying && !inLiquid && keys['KeyW'] && canSprint && !blocking;
   lastSprinting = sprinting;
-  const speed = (flying ? 9 : sprinting ? SPRINT_SPEED : WALK_SPEED) * (player.inWater ? 0.55 : player.inLava ? 0.35 : 1) * (hacks.speed ? 2.5 : 1);
+  const speed = (flying ? 9 : sprinting ? SPRINT_SPEED : WALK_SPEED) * (player.inWater ? 0.55 : player.inLava ? 0.35 : 1) * (hacks.speed ? 2.5 : 1) * (blocking ? 0.35 : 1);
 
   const fwd = (keys['KeyW']?1:0) - (keys['KeyS']?1:0);
   const strafe = (keys['KeyD']?1:0) - (keys['KeyA']?1:0);
@@ -5585,9 +5685,11 @@ document.addEventListener('keydown', e => {
     refreshAllUI();
   }
   if (e.code === 'KeyT' && xrayUnlocked && (playing || fallbackMode)) toggleXray();
-  if (e.code === 'KeyF' && (creative || hacks.fly)) {
-    flying = !flying;
-    if (flying) player.vel.y = 0;
+  if (e.code === 'KeyF') {
+    if (creative || hacks.fly) {
+      flying = !flying;
+      if (flying) player.vel.y = 0;
+    } else swapOffhand();   // F swaps main hand ↔ off-hand, like Minecraft
   }
   if (e.code === 'Space') e.preventDefault();
 });
@@ -5650,13 +5752,19 @@ document.addEventListener('mousedown', e => {
     else if (heldDef() && heldDef().bow) { bowCharging = true; bowDraw = 0; }
     else if (heldDef() && heldDef().glider) { if (!player.onGround && !onLadder) { gliding = !gliding; sfx.pop(); } }
     else if (heldDef() && heldDef().cart) placeCart();
+    else if (heldDef() && heldDef().shield) blocking = true;      // shield in main hand
     else if (useBucket()) { /* handled */ }
-    else if (!eatHeld()) placeBlock();
+    else if (!eatHeld()) {
+      placeBlock();
+      // main hand had nothing to do: raise an off-hand shield (blocks still place normally)
+      if (offDef() && offDef().shield && !(heldId() && heldId() < 100)) blocking = true;
+    }
   }
 });
 document.addEventListener('mouseup', e => {
   if (e.button === 0) miningHeld = false;
   if (e.button === 2 && bowCharging) { fireArrow(Math.min(bowDraw, 1)); bowCharging = false; }
+  if (e.button === 2) blocking = false;
 });
 document.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -5677,6 +5785,23 @@ const heldSprite = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ map: heldTexture, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide })
 );
 heldGroup.add(heldCube); heldGroup.add(heldSprite);
+// off-hand mirror of the same rig
+const offCanvas = document.createElement('canvas');
+offCanvas.width = offCanvas.height = TILE;
+const offCtx = offCanvas.getContext('2d');
+const offTexture = new THREE.CanvasTexture(offCanvas);
+offTexture.magFilter = offTexture.minFilter = THREE.NearestFilter;
+const offGroup = new THREE.Group();
+camera.add(offGroup);
+const offCube = new THREE.Mesh(
+  new THREE.BoxGeometry(0.4, 0.4, 0.4),
+  new THREE.MeshLambertMaterial({ map: offTexture })
+);
+const offSprite = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.55, 0.55),
+  new THREE.MeshBasicMaterial({ map: offTexture, transparent: true, alphaTest: 0.1, side: THREE.DoubleSide })
+);
+offGroup.add(offCube); offGroup.add(offSprite);
 function updateHeldItem() {
   const id = heldId();
   heldCtx.clearRect(0, 0, TILE, TILE);
@@ -5692,6 +5817,15 @@ function updateHeldItem() {
     heldCube.visible = false; heldSprite.visible = true;
   }
   heldTexture.needsUpdate = true;
+  const os = offStack();
+  offCtx.clearRect(0, 0, TILE, TILE);
+  offGroup.visible = !!os;
+  if (os) {
+    offCtx.drawImage(getIcon(os.id), 0, 0);
+    const isBlock = os.id < 100 && os.id !== 15;
+    offCube.visible = isBlock; offSprite.visible = !isBlock;
+  }
+  offTexture.needsUpdate = true;
 }
 let swingTime = 1;
 function swingArm() { swingTime = 0; }
@@ -5701,8 +5835,15 @@ function updateArm(dt, now) {
   let dip = 0;
   if (miningHeld && mining) dip = (Math.sin(now / 1000 * 16) + 1) / 2;
   else if (swingTime < DUR) dip = Math.sin(swingTime / DUR * Math.PI);
-  heldGroup.position.set(0.5, -0.45 - dip * 0.16 + bobAmt * 0.4, -0.75 - dip * 0.12);
-  heldGroup.rotation.set(0.15 - dip * 0.9, Math.PI / 5, 0);
+  if (blocking && !shieldRef()) blocking = false;   // shield gone (swapped away / broke)
+  blockAnim = Math.min(1, Math.max(0, blockAnim + (blocking ? dt : -dt) * 8));
+  // which hand holds the raised shield?
+  const mainShield = heldDef() && heldDef().shield ? blockAnim : 0;
+  const offShield  = !mainShield && offDef() && offDef().shield ? blockAnim : 0;
+  heldGroup.position.set(0.5 - mainShield * 0.32, -0.45 - dip * 0.16 + bobAmt * 0.4 + mainShield * 0.14, -0.75 - dip * 0.12 + mainShield * 0.18);
+  heldGroup.rotation.set(0.15 - dip * 0.9, Math.PI / 5 - mainShield * 0.9, 0);
+  offGroup.position.set(-0.5 + offShield * 0.32, -0.45 + bobAmt * 0.4 + offShield * 0.14, -0.75 + offShield * 0.18);
+  offGroup.rotation.set(0.15, -Math.PI / 5 + offShield * 0.9, 0);
 }
 
 // ---------- POINTER LOCK ----------
@@ -5712,6 +5853,7 @@ function syncHud() {
   const show = playing || inventoryOpen || furnaceOpen || chestOpen || enchantOpen || hacksOpen || tradeOpen || schemOpen;
   document.getElementById('crosshair').style.display = playing ? 'block' : 'none';
   document.getElementById('hotbar').style.display = show ? 'flex' : 'none';
+  document.getElementById('offbar').style.display = show ? 'flex' : 'none';
   document.getElementById('hearts').style.display = show ? 'block' : 'none';
   document.getElementById('hunger').style.display = show ? 'block' : 'none';
   document.getElementById('hud').style.display = playing ? 'block' : 'none';
@@ -5767,6 +5909,7 @@ function openChest(x, y, z) {
   if (fallbackMode) { playing = false; syncHud(); }
   else document.exitPointerLock();
   document.getElementById('hotbar').style.display = 'flex';
+  document.getElementById('offbar').style.display = 'flex';
 }
 function closeChest() {
   hideTooltip();
@@ -5888,6 +6031,7 @@ function openEnchant() {
   if (fallbackMode) { playing = false; syncHud(); }
   else document.exitPointerLock();
   document.getElementById('hotbar').style.display = 'flex';
+  document.getElementById('offbar').style.display = 'flex';
 }
 function closeEnchant() {
   hideTooltip();
@@ -5954,6 +6098,7 @@ function toggleInventory(force, size) {
     if (fallbackMode) { playing = false; syncHud(); }
     else document.exitPointerLock();
     document.getElementById('hotbar').style.display = 'flex';
+    document.getElementById('offbar').style.display = 'flex';
   } else {
     hideTooltip();
     clearCraftGrid();
@@ -5998,6 +6143,11 @@ function buildPanels() {
     el.addEventListener('mousedown', () => { if (playing && !inventoryOpen) { selectedSlot = i; refreshAllUI(); } });
     bar.appendChild(el);
   }
+  // off-hand: one slot to the left of the hotbar + a mirror in the inventory
+  const offEl = registerSlot(makeSlotEl(offSlots, 0));
+  offEl.insertAdjacentHTML('beforeend', '<span class="key">F</span>');
+  document.getElementById('offbar').appendChild(offEl);
+  document.getElementById('invOff').appendChild(registerSlot(makeSlotEl(offSlots, 0)));
   // inventory panel: 27 backpack slots + hotbar mirror
   const invGrid = document.getElementById('invGrid');
   for (let i = 0; i < 27; i++) invGrid.appendChild(registerSlot(makeSlotEl(invSlots, i)));
@@ -6088,6 +6238,13 @@ function renderSlots() {
         g.fillStyle = '#d8b8ff';
         g.fillRect(12, 1, 3, 1); g.fillRect(13, 0, 1, 3);
       }
+      if (s.dur !== undefined && s.dur < SHIELD_DUR) {   // shield wear bar
+        const frac = Math.max(s.dur / SHIELD_DUR, 0);
+        g.fillStyle = '#111';
+        g.fillRect(2, 14, 12, 1);
+        g.fillStyle = frac > 0.5 ? '#4ae04a' : frac > 0.25 ? '#e0c04a' : '#e04a4a';
+        g.fillRect(2, 14, Math.max(1, Math.round(12 * frac)), 1);
+      }
     }
     el.querySelector('.count').textContent = s && s.n > 1 ? s.n : '';
     if (el.classList.contains('hotslot')) el.classList.toggle('selected', el._i === selectedSlot);
@@ -6146,7 +6303,8 @@ function setTargetLabel(text) {
 function tooltipFor(e, stack) {
   const tt = document.getElementById('tooltip');
   if (!stack) { tt.style.display = 'none'; return; }
-  tt.textContent = nameOf(stack.id) + (stack.n > 1 ? ' ×' + stack.n : '') + enchSuffix(stack);
+  tt.textContent = nameOf(stack.id) + (stack.n > 1 ? ' ×' + stack.n : '') + enchSuffix(stack)
+    + (stack.dur !== undefined ? ` · 🛡 ${Math.max(stack.dur, 0)}/${SHIELD_DUR}` : '');
   tt.style.left = (e.clientX + 14) + 'px';
   tt.style.top = (e.clientY + 10) + 'px';
   tt.style.display = 'block';
@@ -6228,6 +6386,7 @@ if (SAVEDATA) {
   if (SAVEDATA.spawn) spawnPoint.set(SAVEDATA.spawn[0], SAVEDATA.spawn[1], SAVEDATA.spawn[2]);
   if (SAVEDATA.hot) for (let i = 0; i < 9; i++) hotSlots[i] = SAVEDATA.hot[i] || null;
   if (SAVEDATA.inv) for (let i = 0; i < 27; i++) invSlots[i] = SAVEDATA.inv[i] || null;
+  if (SAVEDATA.off) offSlots[0] = SAVEDATA.off[0] || null;
   if (SAVEDATA.player) {
     player.hp = SAVEDATA.player.hp;
     player.hunger = SAVEDATA.player.hunger;
